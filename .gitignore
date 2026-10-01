@@ -216,3 +216,40 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node.js
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Testing
+playwright-report/
+test-results/
+coverage/
+
+# Prisma local database
+prisma/*.db
+prisma/*.db-journal
+
+/app/generated/prisma

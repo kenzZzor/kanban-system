@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: kanban-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kanban
+      POSTGRES_USER: kanban
+      POSTGRES_PASSWORD: kanban_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - kanban_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  kanban_postgres_data:
