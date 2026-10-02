@@ -1,5 +1,5 @@
 # Kanban System
-# test
+
 Локальная корпоративная система управления задачами на основе Kanban.
 
 Система предназначена для организации рабочего процесса внутри компании с учётом структуры подразделений, ролей и прав доступа, иерархии сотрудников, проектов, задач, междепартаментного взаимодействия, комментариев, истории изменений и уведомлений.
@@ -8,21 +8,31 @@
 
 ## Project Status
 
-**Current stage:** Foundation + Database Foundation
+**Current stage:** Foundation + Authentication
 
-На текущем этапе подготовлена базовая архитектура приложения и инфраструктура базы данных:
+На текущем этапе завершены базовая архитектура приложения, инфраструктура базы данных и первый функциональный срез аутентификации.
+
+Реализовано:
 
 * создано Next.js-приложение с TypeScript;
 * настроены ESLint и Tailwind CSS;
-* подготовлен Podman-окружение;
+* подготовлено Podman-окружение;
 * запущен PostgreSQL 16;
 * подключён Prisma ORM 7;
-* разработана первоначальная доменная модель;
-* создана и применена первая Prisma migration;
+* разработана доменная модель базы данных;
+* созданы и применены Prisma migrations;
 * сгенерирован Prisma Client;
-* настроена базовая структура проекта и правила разработки.
+* реализованы development seed-данные;
+* настроено подключение приложения к PostgreSQL;
+* реализована session-based authentication;
+* реализовано хеширование паролей через bcrypt;
+* реализованы login / logout / current-user API;
+* серверные сессии хранятся в PostgreSQL;
+* session token не хранится в базе данных в открытом виде;
+* добавлены Playwright E2E-тесты для authentication flow;
+* выполнены typecheck, lint, build и automated tests.
 
-Следующие этапы включают seed-данные, аутентификацию, RBAC, организационную структуру, управление задачами, междепартаментный workflow, аудит, Kanban-интерфейс и отчётность.
+Следующий функциональный этап — RBAC и серверная модель permissions, после чего будет реализована организационная структура, проекты и задачи.
 
 ## Product Scope
 
@@ -89,6 +99,65 @@ Notification
 
 Проверка прав доступа выполняется на сервере и не зависит от ограничений интерфейса.
 
+## Authentication
+
+Текущий authentication layer использует серверные сессии.
+
+Основной flow:
+
+```text
+Login Request
+     ↓
+Validate Credentials
+     ↓
+Find Active User
+     ↓
+Verify Password
+     ↓
+Create Session
+     ↓
+Store Session Hash in PostgreSQL
+     ↓
+Set HttpOnly Cookie
+```
+
+Сессия:
+
+```text
+Browser
+   │
+   │ kanban_session cookie
+   ▼
+Next.js
+   │
+   ▼
+SHA-256 token hash
+   │
+   ▼
+Session
+   │
+   ▼
+User
+```
+
+Реализованные endpoints:
+
+```text
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/me
+```
+
+Cookie сессии имеет следующие свойства:
+
+* `HttpOnly`;
+* `SameSite=Lax`;
+* `Secure` в production;
+* ограниченный срок действия;
+* серверное удаление сессии при logout.
+
+В PostgreSQL хранится только hash session token, а не исходный token.
+
 ## Core Domain Model
 
 Основные сущности базы данных:
@@ -100,7 +169,8 @@ User
 ├── Task
 ├── Comment
 ├── ActivityLog
-└── Notification
+├── Notification
+└── Session
 
 Department
 ├── DepartmentMember
@@ -135,7 +205,8 @@ Task
 * задачи;
 * комментарии;
 * журнал активности;
-* уведомления.
+* уведомления;
+* пользовательские сессии.
 
 ## Roles
 
@@ -148,6 +219,10 @@ Task
 | `MANAGER`          | управление сотрудниками и рабочими задачами |
 | `EMPLOYEE`         | работа с назначенными задачами              |
 | `VIEWER`           | просмотр доступных данных                   |
+
+`SYSTEM_ADMIN` является глобальной системной ролью и не привязывается к конкретному департаменту.
+
+Остальные роли используются в контексте членства пользователя в департаменте.
 
 Фактические проверки доступа реализуются на серверном уровне через RBAC и permission model.
 
@@ -200,7 +275,8 @@ CANCELLED
 * Next.js Server / API
 * Prisma ORM 7
 * PostgreSQL 16
-* Zod
+* Prisma PostgreSQL adapter
+* bcryptjs
 
 ### Infrastructure
 
@@ -210,53 +286,45 @@ CANCELLED
 
 ### Testing
 
-* TypeScript checks
+* TypeScript
 * ESLint
-* Unit / Integration tests
-* Playwright E2E — планируется по мере формирования функциональных срезов
+* Playwright
+* E2E authentication tests
+* Unit / Integration tests — по мере реализации соответствующих модулей
 
 ## Repository Structure
+
+Текущая структура проекта:
 
 ```text
 kanban-system/
 │
 ├── app/
-│   ├── auth/
-│   ├── dashboard/
-│   ├── my-tasks/
-│   ├── tasks/
-│   ├── kanban/
-│   ├── backlog/
-│   ├── departments/
-│   ├── projects/
-│   ├── team/
-│   ├── reports/
-│   ├── activity/
-│   ├── notifications/
-│   ├── settings/
-│   └── admin/
-│
-├── components/
-│   ├── ui/
-│   ├── layout/
-│   ├── tasks/
-│   ├── kanban/
-│   └── dashboard/
+│   ├── api/
+│   │   └── auth/
+│   │       ├── login/
+│   │       ├── logout/
+│   │       └── me/
+│   │
+│   └── generated/
+│       └── prisma/
 │
 ├── lib/
 │   ├── auth/
-│   ├── db/
-│   ├── permissions/
-│   ├── validation/
-│   ├── services/
-│   └── utils/
+│   │   ├── current-user.ts
+│   │   ├── password.ts
+│   │   └── session.ts
+│   │
+│   └── db.ts
 │
 ├── prisma/
-│   ├── schema.prisma
 │   ├── migrations/
-│   └── seed.ts
+│   ├── schema.prisma
+│   ├── seed.ts
+│   └── prisma7.config.ts
 │
 ├── tests/
+│   └── auth.spec.ts
 │
 ├── public/
 │
@@ -264,14 +332,14 @@ kanban-system/
 ├── Dockerfile
 ├── .env.example
 ├── AGENTS.md
-├── CLAUDE.md
 ├── ARCHITECTURE.md
 ├── DATABASE.md
 ├── API.md
+├── playwright.config.ts
 └── README.md
 ```
 
-Некоторые директории и документы будут добавляться по мере реализации соответствующих функциональных модулей.
+По мере реализации функциональных модулей будут добавляться соответствующие директории `app/`, `components/` и `lib/`.
 
 ## Local Development
 
@@ -358,6 +426,40 @@ npx prisma migrate dev --name <migration_name>
 npx prisma generate
 ```
 
+Запуск development seed:
+
+```bash
+npx prisma db seed
+```
+
+Seed используется только для контролируемого development/test окружения.
+
+## Authentication Testing
+
+Для запуска E2E-тестов:
+
+```bash
+npx playwright test
+```
+
+Текущий authentication test suite проверяет:
+
+* успешный login;
+* создание и использование session cookie;
+* получение текущего пользователя;
+* logout;
+* удаление серверной сессии;
+* отказ при неверном пароле;
+* отказ при отсутствии обязательных credentials.
+
+Текущий результат:
+
+```text
+3 passed
+```
+
+Playwright автоматически запускает Next.js development server через `playwright.config.ts`.
+
 ## Development Checks
 
 Перед фиксацией значимого изменения необходимо проверить проект:
@@ -365,11 +467,18 @@ npx prisma generate
 ```bash
 npx prisma validate
 npx prisma migrate status
+npx tsc --noEmit
 npm run lint
 npm run build
 ```
 
-Для каждого законченного функционального среза также должны добавляться соответствующие автоматизированные тесты.
+Для функциональных срезов также запускаются соответствующие автоматизированные тесты:
+
+```bash
+npx playwright test
+```
+
+Каждый законченный функциональный срез должен проходить typecheck, lint и соответствующие tests.
 
 ## Development Principles
 
@@ -419,19 +528,30 @@ Tests
 * [x] PostgreSQL
 * [x] Prisma
 * [x] Initial domain schema
-* [x] Initial migration
+* [x] Prisma migrations
 * [x] Prisma Client generation
-* [ ] Development seed
+* [x] Development seed
+
+### Authentication
+
+* [x] Authentication foundation
+* [x] Password hashing
+* [x] Server-side sessions
+* [x] Login API
+* [x] Logout API
+* [x] Current user API
+* [x] HttpOnly session cookie
+* [x] Authentication E2E tests
+* [ ] Authentication UI
 
 ### Core Platform
 
-* [ ] Authentication
-* [ ] Server-side sessions
 * [ ] RBAC
 * [ ] Permissions
 * [ ] Departments
 * [ ] Department membership
 * [ ] Employee hierarchy
+* [ ] Authorization services
 
 ### Task Management
 
@@ -466,7 +586,7 @@ Tests
 
 * [ ] Unit tests
 * [ ] Integration tests
-* [ ] E2E tests
+* [x] E2E authentication tests
 * [ ] Security hardening
 * [ ] Error handling and observability
 * [ ] Database backup strategy
@@ -476,12 +596,12 @@ Tests
 
 Работа ведётся через небольшие осмысленные коммиты, соответствующие законченным этапам разработки.
 
-Пример:
+Примеры:
 
 ```text
 foundation: initialize application and database
 data: add development seed
-auth: implement authentication and sessions
+feat: add session-based authentication
 rbac: implement roles and permissions
 organization: implement departments and hierarchy
 tasks: implement task core
