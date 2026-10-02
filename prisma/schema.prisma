@@ -80,10 +80,25 @@ model User {
   comments           Comment[]
   activities         ActivityLog[]      @relation("ActivityActor")
   notifications      Notification[]
+  sessions           Session[]
 
   @@index([email])
   @@index([isActive])
   @@index([systemRoleId])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Role {

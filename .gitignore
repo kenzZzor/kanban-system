@@ -14,7 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -253,3 +252,6 @@ prisma/*.db
 prisma/*.db-journal
 
 /app/generated/prisma
+
+# TypeScript
+*.tsbuildinfo
