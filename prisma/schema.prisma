@@ -64,10 +64,12 @@ model User {
   firstName    String
   lastName     String
   middleName   String?
+  systemRoleId String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  systemRole         Role?              @relation("UserSystemRole", fields: [systemRoleId], references: [id])
   memberships        DepartmentMember[]
   createdDepartments Department[]       @relation("DepartmentCreator")
   managedDepartments Department[]       @relation("DepartmentManager")
@@ -81,6 +83,7 @@ model User {
 
   @@index([email])
   @@index([isActive])
+  @@index([systemRoleId])
 }
 
 model Role {
@@ -92,6 +95,7 @@ model Role {
 
   permissions RolePermission[]
   members     DepartmentMember[]
+  systemUsers User[]             @relation("UserSystemRole")
 }
 
 model Permission {
@@ -255,8 +259,9 @@ model Task {
   priority           Priority    @relation(fields: [priorityId], references: [id])
   taskType           TaskType    @relation(fields: [taskTypeId], references: [id])
 
-  comments   Comment[]
-  activities ActivityLog[]
+  comments      Comment[]
+  activities    ActivityLog[]
+  notifications Notification[]
 
   @@index([createdById])
   @@index([sourceDepartmentId])
@@ -316,7 +321,8 @@ model Notification {
   createdAt DateTime         @default(now())
   readAt    DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead, createdAt])
   @@index([taskId])
