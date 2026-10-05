@@ -14,15 +14,26 @@
 
 ## Current Stage
 
-**Foundation + Authentication**
+**Organization — Departments API**
 
-Фундамент проекта и базовая серверная аутентификация реализованы.
+Фундамент проекта, серверная аутентификация, RBAC и базовый серверный контракт подразделений реализованы.
+
+Текущий функциональный срез включает:
+
+* получение списка доступных пользователю подразделений;
+* глобальный доступ `SYSTEM_ADMIN` к подразделениям;
+* ограниченный доступ остальных пользователей через `DepartmentMember`;
+* создание подразделения;
+* server-side permission checks;
+* серверную валидацию входных данных через Zod;
+* корректное разделение `401 Unauthorized` и `403 Forbidden`;
+* E2E-тесты Departments API.
 
 Следующий функциональный этап:
 
-**RBAC — Role-Based Access Control и серверная модель permissions.**
+**Department Members API — управление участниками подразделения, ролями и иерархией подчинения.**
 
-На текущем этапе UI авторизации ещё не реализован. Разработка выполняется последовательно, без преждевременного перехода к Kanban, Dashboard или другим следующим модулям.
+UI подразделений пока не реализован. Разработка продолжается последовательно, без преждевременного перехода к Kanban Board, Dashboard и другим следующим модулям.
 
 ---
 
@@ -63,7 +74,7 @@ Next.js Application
    ├── UI / Pages / Components
    ├── API / Route Handlers
    ├── Authentication / Sessions
-   ├── Permissions
+   ├── Permissions / RBAC
    └── Business Services
           ↓
        Prisma
@@ -126,16 +137,19 @@ Podman / Docker Compose
 
 ## Repository Structure
 
-Текущая структура репозитория:
+Актуальная структура функциональных частей репозитория:
 
 ```text
 kanban-system/
 ├── app/
 │   ├── api/
-│   │   └── auth/
-│   │       ├── login/
-│   │       ├── logout/
-│   │       └── me/
+│   │   ├── auth/
+│   │   │   ├── login/
+│   │   │   ├── logout/
+│   │   │   └── me/
+│   │   ├── users/
+│   │   └── departments/
+│   │
 │   └── ...
 │
 ├── lib/
@@ -143,6 +157,12 @@ kanban-system/
 │   │   ├── current-user.ts
 │   │   ├── password.ts
 │   │   └── session.ts
+│   │
+│   ├── permissions/
+│   │   ├── codes.ts
+│   │   ├── policy.ts
+│   │   └── service.ts
+│   │
 │   └── db.ts
 │
 ├── prisma/
@@ -153,7 +173,10 @@ kanban-system/
 ├── public/
 │
 ├── tests/
-│   └── auth.spec.ts
+│   ├── auth.spec.ts
+│   ├── departments.spec.ts
+│   ├── permissions.unit.ts
+│   └── rbac.spec.ts
 │
 ├── .env.example
 ├── .gitignore
@@ -211,6 +234,8 @@ Tests
 * `assignedTo`;
 * другим идентификаторам и параметрам, влияющим на права доступа.
 
+Критические идентификаторы должны определяться или проверяться сервером в соответствии с текущей сессией и полномочиями пользователя.
+
 ### 3. No mock data in production
 
 Seed используется только для development/test окружения.
@@ -230,7 +255,8 @@ Production не должен зависеть от демонстрационн�
 Примеры:
 
 ```text
-feat: add role based access control
+feat: add server-side RBAC authorization
+feat: add departments API
 feat: add department membership
 fix: prevent unauthorized task update
 docs: update README
@@ -333,29 +359,25 @@ GET /api/auth/me
 
 ---
 
-## Roles
+# RBAC
 
-Базовая ролевая модель системы:
+RBAC реализован на серверной стороне.
+
+Основная модель разделяет глобальную системную роль и роли внутри подразделений.
+
+## System Role
 
 ```text
 SYSTEM_ADMIN
-DEPARTMENT_ADMIN
-MANAGER
-EMPLOYEE
-VIEWER
 ```
 
-### SYSTEM_ADMIN
+`SYSTEM_ADMIN` является глобальной ролью пользователя.
 
-Глобальная системная роль.
+Он не привязан к конкретному Department для получения системных permissions.
 
-`SYSTEM_ADMIN` не привязан к конкретному Department.
+## Department Roles
 
-Имеет системный scope.
-
-### Department Roles
-
-Следующие роли относятся к конкретному подразделению:
+Следующие роли являются department-scoped:
 
 ```text
 DEPARTMENT_ADMIN
@@ -364,9 +386,195 @@ EMPLOYEE
 VIEWER
 ```
 
-Связь пользователя с подразделением реализуется через `DepartmentMember`.
+Связь пользователя с подразделением реализуется через:
 
-Роль и manager scope относятся к membership, а не непосредственно к `User`.
+```text
+Department
+    ↓
+DepartmentMember
+    ↓
+User + Role
+```
+
+Роль относится к membership пользователя в конкретном Department, а не к глобальному объекту `User`.
+
+## Permissions
+
+Основные permission codes:
+
+```text
+USERS_READ
+USERS_MANAGE
+
+DEPARTMENTS_READ
+DEPARTMENTS_MANAGE
+
+MEMBERS_READ
+MEMBERS_MANAGE
+
+PROJECTS_READ
+PROJECTS_MANAGE
+
+TASKS_READ
+TASKS_CREATE
+TASKS_UPDATE
+TASKS_ASSIGN
+TASKS_STATUS_CHANGE
+
+COMMENTS_CREATE
+
+ACTIVITY_READ
+NOTIFICATIONS_READ
+```
+
+`SYSTEM_ADMIN` имеет системный доступ ко всем permissions.
+
+Остальные пользователи получают permissions в рамках соответствующего `DepartmentMember` и назначенной ему роли.
+
+## Authorization Rules
+
+Сервер использует следующие базовые правила:
+
+```text
+No session
+    ↓
+401 Unauthorized
+
+Authenticated
+    ↓
+Permission denied
+    ↓
+403 Forbidden
+
+Authenticated
+    ↓
+Permission granted
+    ↓
+Operation allowed
+```
+
+Authorization не основывается на значениях, переданных клиентским интерфейсом.
+
+---
+
+# Users API
+
+Реализован глобальный users API:
+
+```http
+GET /api/users
+```
+
+Доступ защищён server-side RBAC.
+
+Неаутентифицированный запрос возвращает:
+
+```text
+401 Unauthorized
+```
+
+Пользователь без необходимого permission получает:
+
+```text
+403 Forbidden
+```
+
+На текущем этапе глобальное чтение пользователей доступно `SYSTEM_ADMIN`.
+
+---
+
+# Departments
+
+Базовый Departments API реализован.
+
+## GET Departments
+
+```http
+GET /api/departments
+```
+
+Поведение зависит от scope пользователя.
+
+### SYSTEM_ADMIN
+
+`SYSTEM_ADMIN` получает список всех подразделений.
+
+### Department Member
+
+Обычный аутентифицированный пользователь получает только те подразделения, в которых существует его `DepartmentMember`.
+
+### Unauthenticated
+
+Без действующей сессии API возвращает:
+
+```text
+401 Unauthorized
+```
+
+## POST Department
+
+```http
+POST /api/departments
+```
+
+Создание Department требует:
+
+```text
+DEPARTMENTS_MANAGE
+```
+
+В текущей модели это системное permission, поэтому создавать Department может `SYSTEM_ADMIN`.
+
+Владелец операции определяется сервером:
+
+```text
+createdById = current authenticated user
+```
+
+`createdById` не принимается как доверенное значение от клиента.
+
+### Validation
+
+Для входных данных используется Zod.
+
+Текущий контракт:
+
+```text
+name
+    required
+    trimmed
+    1–200 characters
+
+description
+    optional
+    trimmed
+    maximum 1000 characters
+```
+
+Некорректные данные приводят к:
+
+```text
+400 Bad Request
+```
+
+## Departments E2E
+
+Departments API покрыт Playwright-тестами.
+
+Проверяются:
+
+* отсутствие авторизации;
+* чтение Department через `SYSTEM_ADMIN`;
+* чтение собственного Department обычным участником;
+* запрет создания Department для Department Admin;
+* создание Department через `SYSTEM_ADMIN`;
+* validation request body.
+
+Текущий результат:
+
+```text
+6 passed
+```
 
 ---
 
@@ -419,6 +627,15 @@ npx prisma generate
 ```bash
 npx prisma validate
 ```
+
+Текущая схема содержит:
+
+```text
+Department
+DepartmentMember
+```
+
+и необходимые связи с пользователями, ролями, задачами и проектами.
 
 ---
 
@@ -579,12 +796,28 @@ DevOnly123!
 
 ## Unit Tests
 
-Используются для проверки изолированной бизнес-логики:
+Используются для проверки изолированной бизнес-логики.
 
-* permissions;
-* workflow;
-* validation;
-* utilities.
+На текущем этапе реализованы unit-тесты permission policy:
+
+```text
+inactive user
+SYSTEM_ADMIN
+department permission
+permission denied
+```
+
+Запуск:
+
+```bash
+npm run test:unit
+```
+
+Текущий результат:
+
+```text
+RBAC permission policy unit tests passed.
+```
 
 ## Integration Tests
 
@@ -607,28 +840,52 @@ PostgreSQL
 * audit transactions;
 * cross-department operations.
 
+По мере реализации соответствующих модулей integration coverage будет расширяться.
+
 ## E2E Tests
 
-Playwright используется для проверки реальных пользовательских сценариев.
+Playwright используется для проверки реальных пользовательских и API-сценариев.
 
-Текущие authentication E2E tests проверяют:
+На текущем этапе E2E покрывают:
+
+### Authentication
 
 * login;
 * authenticated `/me`;
 * logout;
 * невозможность получить `/me` после logout.
 
-Запуск:
+### RBAC
+
+* unauthenticated access;
+* `SYSTEM_ADMIN` access;
+* запрещённый access для Department Admin.
+
+### Departments
+
+* GET access;
+* Department scope;
+* создание Department;
+* validation;
+* authorization.
+
+Запуск полного набора:
 
 ```bash
 npx playwright test
+```
+
+Запуск Departments:
+
+```bash
+npx playwright test tests/departments.spec.ts
 ```
 
 ---
 
 # Code Quality
 
-Перед фиксацией значимого изменения необходимо выполнить проверки:
+Перед фиксацией значимого изменения необходимо выполнить:
 
 ```bash
 npx tsc --noEmit
@@ -647,6 +904,12 @@ npx prisma migrate status
 
 ```bash
 npx playwright test
+```
+
+Unit tests:
+
+```bash
+npm run test:unit
 ```
 
 ---
@@ -702,6 +965,8 @@ Authentication
 RBAC
       ↓
 Departments
+      ↓
+Department Members
       ↓
 Projects
       ↓
@@ -770,28 +1035,50 @@ Production
 
 ## Phase 3 — RBAC
 
-* [ ] Role model
-* [ ] Permission model
-* [ ] Role-permission mapping
-* [ ] Global SYSTEM_ADMIN scope
-* [ ] Department-scoped roles
-* [ ] Server-side permission checks
-* [ ] Permission helper/service
-* [ ] API authorization
-* [ ] RBAC unit tests
-* [ ] RBAC integration tests
+* [x] Role model
+* [x] Permission model
+* [x] Role-permission mapping
+* [x] Global SYSTEM_ADMIN scope
+* [x] Department-scoped roles
+* [x] Server-side permission checks
+* [x] Permission helper/service
+* [x] API authorization
+* [x] RBAC unit tests
+* [x] RBAC E2E tests
 
 ## Phase 4 — Organization
 
-* [ ] Department creation
-* [ ] Department details
-* [ ] Department membership
-* [ ] Managers
-* [ ] Teams
-* [ ] Employee membership
-* [ ] Department permissions
+### Departments
+
+* [x] Department database model
+* [x] Department read API
+* [x] Department creation API
+* [x] Department authorization
+* [x] Department input validation
+* [x] Department E2E tests
+* [ ] Department details API
+* [ ] Department UI
+
+### Department Members
+
+* [ ] Department membership API
+* [ ] Add member
+* [ ] Remove member
+* [ ] Change member role
+* [ ] Assign manager
+* [ ] Manager/subordinate hierarchy
+* [ ] Membership permissions
+* [ ] Membership E2E tests
 * [ ] Organization UI
-* [ ] Organization tests
+
+### Teams
+
+* [ ] Team model
+* [ ] Team membership
+* [ ] Team permissions
+* [ ] Team API
+* [ ] Team UI
+* [ ] Team tests
 
 ## Phase 5 — Task Core
 
@@ -949,6 +1236,8 @@ Build
 Documentation, if contract changed
         ↓
 Git Commit
+        ↓
+Push
 ```
 
 Не допускается считать функцию завершённой только на основании визуального результата.
@@ -981,7 +1270,7 @@ Git Commit
 
 # Core API Contract
 
-Запланированные основные API:
+Реализованные API:
 
 ```text
 POST   /api/auth/login
@@ -990,9 +1279,19 @@ GET    /api/auth/me
 
 GET    /api/users
 
+GET    /api/departments
 POST   /api/departments
+```
+
+Запланированные API:
+
+```text
 GET    /api/departments/:id
+
+GET    /api/departments/:id/members
 POST   /api/departments/:id/members
+PATCH  /api/departments/:id/members/:memberId
+DELETE /api/departments/:id/members/:memberId
 
 POST   /api/projects
 
@@ -1049,21 +1348,23 @@ API должен использовать единообразный форма�
 ```text
 1. Проверить текущую архитектуру
 2. Проверить существующую Prisma schema
-3. Определить необходимые изменения
-4. Реализовать Database layer
-5. Реализовать API / Service
-6. Добавить server-side permissions
-7. Добавить validation
-8. Добавить UI
-9. Добавить Activity / Audit
-10. Добавить notifications, если необходимо
-11. Добавить tests
-12. Выполнить typecheck
-13. Выполнить lint
-14. Выполнить build
-15. Обновить документацию
-16. Создать Git commit
-17. Push в remote
+3. Проверить существующие permissions
+4. Проверить существующие API contracts
+5. Определить необходимые изменения
+6. Реализовать Database layer
+7. Реализовать API / Service
+8. Добавить server-side permissions
+9. Добавить validation
+10. Добавить UI
+11. Добавить Activity / Audit
+12. Добавить notifications, если необходимо
+13. Добавить tests
+14. Выполнить typecheck
+15. Выполнить lint
+16. Выполнить build
+17. Обновить документацию
+18. Создать Git commit
+19. Push в remote
 ```
 
 Нельзя менять архитектуру, стек или структуру базы без необходимости.
@@ -1074,14 +1375,14 @@ API должен использовать единообразный форма�
 
 # Current Development State
 
-На текущем этапе реализованы:
+На текущем этапе реализованы и проверены:
 
 ```text
 Project Foundation
         ✓
-PostgreSQL
+PostgreSQL 16
         ✓
-Prisma
+Prisma 7
         ✓
 Database Schema
         ✓
@@ -1101,15 +1402,61 @@ Current User API
         ✓
 Authentication E2E
         ✓
+RBAC Permission Model
+        ✓
+Role-permission Mapping
+        ✓
+Server-side RBAC
+        ✓
+Users Authorization
+        ✓
+Departments Read API
+        ✓
+Departments Create API
+        ✓
+Departments Validation
+        ✓
+Departments Authorization
+        ✓
+Departments E2E Tests
+        ✓
+```
+
+Последний завершённый функциональный commit:
+
+```text
+3bdf232 feat: add departments API
+```
+
+Remote:
+
+```text
+origin/main
 ```
 
 Следующая задача:
 
 ```text
-RBAC
+Department Members API
 ```
 
-После RBAC разработка продолжается строго последовательно через организационную модель, Task Core и последующие вертикальные срезы.
+Следующий вертикальный срез должен покрыть:
+
+```text
+DepartmentMember
+      ↓
+API / Service
+      ↓
+Role / Permission checks
+      ↓
+Manager hierarchy
+      ↓
+Validation
+      ↓
+E2E tests
+```
+
+После завершения серверного контракта и его проверок можно переходить к UI соответствующего организационного модуля.
 
 ---
 
