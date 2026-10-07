@@ -8,32 +8,40 @@
 
 **Database → API/Service → Permissions → UI → Audit/Activity → Tests**
 
-Функция считается завершённой только после реализации соответствующего серверного контракта, проверок доступа, обработки ошибок, пользовательского интерфейса и необходимых тестов.
+Функция считается завершённой только после реализации соответствующего серверного контракта, проверок доступа, валидации, пользовательского интерфейса и необходимых тестов.
 
 ---
 
 ## Current Stage
 
-**Organization — Departments API**
+**Organization — Department Members API**
 
-Фундамент проекта, серверная аутентификация, RBAC и базовый серверный контракт подразделений реализованы.
+Фундамент проекта, серверная аутентификация, RBAC, Departments API и базовый API управления участниками подразделений реализованы.
 
 Текущий функциональный срез включает:
 
-* получение списка доступных пользователю подразделений;
-* глобальный доступ `SYSTEM_ADMIN` к подразделениям;
-* ограниченный доступ остальных пользователей через `DepartmentMember`;
-* создание подразделения;
+* получение списка участников подразделения;
+* добавление пользователя в подразделение;
+* проверку существования пользователя;
+* проверку активности пользователя;
+* защиту от повторного добавления пользователя;
+* назначение department-scoped роли;
+* назначение manager для участника;
+* проверку принадлежности manager к тому же подразделению;
+* ограничение назначения `DEPARTMENT_ADMIN`;
 * server-side permission checks;
 * серверную валидацию входных данных через Zod;
-* корректное разделение `401 Unauthorized` и `403 Forbidden`;
-* E2E-тесты Departments API.
+* корректное разделение `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict` и других ожидаемых ошибок;
+* Activity logging для операции добавления участника;
+* Playwright API tests для проверки доступа к Department Members API.
+
+На текущем этапе UI подразделений и UI управления участниками ещё не реализованы.
 
 Следующий функциональный этап:
 
-**Department Members API — управление участниками подразделения, ролями и иерархией подчинения.**
+**Расширение Department Members API — изменение ролей, назначение и изменение иерархии, удаление участников, затем UI организационного модуля.**
 
-UI подразделений пока не реализован. Разработка продолжается последовательно, без преждевременного перехода к Kanban Board, Dashboard и другим следующим модулям.
+Разработка продолжается последовательно, без преждевременного перехода к Kanban Board, Dashboard и другим следующим модулям.
 
 ---
 
@@ -75,7 +83,8 @@ Next.js Application
    ├── API / Route Handlers
    ├── Authentication / Sessions
    ├── Permissions / RBAC
-   └── Business Services
+   ├── Business Services
+   └── Activity / Audit
           ↓
        Prisma
           ↓
@@ -102,9 +111,9 @@ Podman / Docker Compose
 
 ### Application
 
-* Next.js
+* Next.js 16
 * TypeScript
-* React
+* React 19
 * Tailwind CSS
 * shadcn/ui
 
@@ -149,6 +158,10 @@ kanban-system/
 │   │   │   └── me/
 │   │   ├── users/
 │   │   └── departments/
+│   │       ├── route.ts
+│   │       └── [departmentId]/
+│   │           └── members/
+│   │               └── route.ts
 │   │
 │   └── ...
 │
@@ -163,6 +176,9 @@ kanban-system/
 │   │   ├── policy.ts
 │   │   └── service.ts
 │   │
+│   ├── activity/
+│   │   └── service.ts
+│   │
 │   └── db.ts
 │
 ├── prisma/
@@ -175,6 +191,7 @@ kanban-system/
 ├── tests/
 │   ├── auth.spec.ts
 │   ├── departments.spec.ts
+│   ├── department-members.spec.ts
 │   ├── permissions.unit.ts
 │   └── rbac.spec.ts
 │
@@ -231,6 +248,7 @@ Tests
 * `userId`;
 * `departmentId`;
 * `roleId`;
+* `managerId`;
 * `assignedTo`;
 * другим идентификаторам и параметрам, влияющим на права доступа.
 
@@ -257,7 +275,8 @@ Production не должен зависеть от демонстрационн�
 ```text
 feat: add server-side RBAC authorization
 feat: add departments API
-feat: add department membership
+feat: add department members API
+feat: add activity audit
 fix: prevent unauthorized task update
 docs: update README
 test: add RBAC integration tests
@@ -331,8 +350,6 @@ POST /api/auth/login
 * создаёт серверную сессию;
 * устанавливает session cookie.
 
----
-
 ### Logout
 
 ```http
@@ -343,8 +360,6 @@ POST /api/auth/logout
 
 * удаляет текущую серверную сессию;
 * очищает session cookie.
-
----
 
 ### Current User
 
@@ -397,6 +412,28 @@ User + Role
 ```
 
 Роль относится к membership пользователя в конкретном Department, а не к глобальному объекту `User`.
+
+## Manager Hierarchy
+
+`DepartmentMember.managerId` ссылается на другого `DepartmentMember`.
+
+Таким образом, иерархия строится внутри конкретного подразделения:
+
+```text
+Department
+    ↓
+DepartmentMember
+    ├── Manager
+    │      ↓
+    │  DepartmentMember
+    │      ↓
+    │   Employee
+    └── ...
+```
+
+`managerId` не является `User.id`.
+
+При добавлении участника сервер проверяет, что указанный manager действительно принадлежит тому же Department.
 
 ## Permissions
 
@@ -570,11 +607,171 @@ Departments API покрыт Playwright-тестами.
 * создание Department через `SYSTEM_ADMIN`;
 * validation request body.
 
-Текущий результат:
+---
+
+# Department Members
+
+Department Members API является текущим реализованным функциональным срезом организационного модуля.
+
+## GET Members
+
+```http
+GET /api/departments/:departmentId/members
+```
+
+Endpoint возвращает участников указанного подразделения.
+
+Для каждого участника доступны:
+
+* `DepartmentMember.id`;
+* дата вступления;
+* дата изменения;
+* пользователь;
+* email;
+* имя;
+* фамилия;
+* отчество;
+* статус активности;
+* department role;
+* manager.
+
+### Access
 
 ```text
-6 passed
+SYSTEM_ADMIN
+    ↓
+доступ к любому Department
+
+DEPARTMENT_ADMIN
+    ↓
+свой Department
+
+MANAGER
+    ↓
+свой Department
+
+EMPLOYEE
+    ↓
+403 Forbidden
+
+VIEWER
+    ↓
+403 Forbidden
 ```
+
+## POST Member
+
+```http
+POST /api/departments/:departmentId/members
+```
+
+Назначение:
+
+* добавление существующего пользователя в Department;
+* назначение department role;
+* назначение manager;
+* создание соответствующего `DepartmentMember`;
+* запись Activity.
+
+Request:
+
+```json
+{
+  "userId": "user-id",
+  "roleCode": "EMPLOYEE",
+  "managerId": "department-member-id"
+}
+```
+
+`managerId` является необязательным.
+
+### Validation and Business Rules
+
+Сервер проверяет:
+
+* наличие действующей сессии;
+* permission `MEMBERS_MANAGE`;
+* существование Department;
+* существование User;
+* активность User;
+* отсутствие существующего membership;
+* существование указанной роли;
+* допустимость назначения `DEPARTMENT_ADMIN`;
+* принадлежность manager к тому же Department.
+
+При повторном добавлении пользователя API возвращает:
+
+```text
+409 Conflict
+```
+
+Неактивного пользователя нельзя добавить в Department.
+
+Назначение `DEPARTMENT_ADMIN` ограничено системным уровнем доступа.
+
+## Activity
+
+Успешное добавление участника создаёт запись:
+
+```text
+ActivityType.MEMBER_ADDED
+```
+
+Activity содержит:
+
+* actor;
+* entity type;
+* entity id;
+* description;
+* department id;
+* user id;
+* role code;
+* manager id;
+* timestamp.
+
+Логирование выполняется через:
+
+```text
+lib/activity/service.ts
+```
+
+---
+
+# Activity and Audit
+
+В Prisma schema существует `ActivityLog`, предназначенный для фиксации значимых действий пользователей.
+
+Текущая реализация включает Activity logging для добавления участника:
+
+```text
+MEMBER_ADDED
+```
+
+Проверенная цепочка:
+
+```text
+POST Department Members
+        ↓
+Permission check
+        ↓
+Validation
+        ↓
+DepartmentMember.create()
+        ↓
+ActivityLog.create()
+```
+
+Полноценная система Audit ещё не завершена.
+
+В дальнейшем будут добавлены:
+
+* immutable audit history;
+* критические mutation logs;
+* task activity;
+* department activity;
+* administrative activity;
+* transactional audit;
+* отдельное чтение Activity/Audit.
 
 ---
 
@@ -588,7 +785,7 @@ ORM:
 
 **Prisma 7**
 
-Основные доменные сущности уже заложены в Prisma schema и будут постепенно использоваться функциональными модулями системы.
+Основные доменные сущности уже заложены в Prisma schema и постепенно используются функциональными модулями системы.
 
 Текущая база данных включает фундаментальные сущности для:
 
@@ -628,15 +825,6 @@ npx prisma generate
 npx prisma validate
 ```
 
-Текущая схема содержит:
-
-```text
-Department
-DepartmentMember
-```
-
-и необходимые связи с пользователями, ролями, задачами и проектами.
-
 ---
 
 # Local Development
@@ -659,15 +847,11 @@ git --version
 podman --version
 ```
 
----
-
 ## Install Dependencies
 
 ```bash
 npm install
 ```
-
----
 
 ## Environment
 
@@ -677,7 +861,7 @@ npm install
 cp .env.example .env
 ```
 
-Текущий локальный connection string:
+Локальный connection string:
 
 ```env
 DATABASE_URL="postgresql://kanban:kanban_dev@localhost:5432/kanban?schema=public"
@@ -697,16 +881,10 @@ DATABASE_URL="postgresql://kanban:kanban_dev@localhost:5432/kanban?schema=public
 podman compose up -d
 ```
 
-Проверка контейнера:
+Проверка контейнеров:
 
 ```bash
 podman ps
-```
-
-Ожидаемый PostgreSQL container:
-
-```text
-kanban-postgres
 ```
 
 Остановка:
@@ -748,7 +926,7 @@ npx prisma migrate status
 npm run dev
 ```
 
-После запуска приложение доступно локально по адресу:
+После запуска приложение доступно локально:
 
 ```text
 http://localhost:3000
@@ -765,11 +943,7 @@ Seed содержит контролируемые тестовые данные
 * пользователей;
 * роли;
 * подразделения;
-* memberships;
-* проекты;
-* задачи;
-* Activity;
-* notifications.
+* memberships.
 
 Seed не предназначен для production.
 
@@ -813,40 +987,11 @@ permission denied
 npm run test:unit
 ```
 
-Текущий результат:
+## E2E / API Tests
 
-```text
-RBAC permission policy unit tests passed.
-```
+Playwright используется для проверки реальных API-сценариев с authentication/session context.
 
-## Integration Tests
-
-Используются для проверки взаимодействия:
-
-```text
-API
- ↓
-Service
- ↓
-Prisma
- ↓
-PostgreSQL
-```
-
-В том числе:
-
-* RBAC;
-* database constraints;
-* audit transactions;
-* cross-department operations.
-
-По мере реализации соответствующих модулей integration coverage будет расширяться.
-
-## E2E Tests
-
-Playwright используется для проверки реальных пользовательских и API-сценариев.
-
-На текущем этапе E2E покрывают:
+На текущем этапе покрыты:
 
 ### Authentication
 
@@ -869,6 +1014,17 @@ Playwright используется для проверки реальных п�
 * validation;
 * authorization.
 
+### Department Members
+
+* unauthenticated access;
+* `SYSTEM_ADMIN` access;
+* `DEPARTMENT_ADMIN` access;
+* `MANAGER` access;
+* запрет для `EMPLOYEE`;
+* запрет для `VIEWER`;
+* запрет доступа к другому Department;
+* `404` для несуществующего Department.
+
 Запуск полного набора:
 
 ```bash
@@ -881,35 +1037,41 @@ npx playwright test
 npx playwright test tests/departments.spec.ts
 ```
 
+Запуск Department Members:
+
+```bash
+npx playwright test tests/department-members.spec.ts
+```
+
 ---
 
 # Code Quality
 
-Перед фиксацией значимого изменения необходимо выполнить:
+Для текущего функционального среза после изменений выполняются:
 
 ```bash
 npx tsc --noEmit
 npm run lint
+```
+
+Для соответствующих изменений также используются:
+
+```bash
+npx playwright test
+npm run test:unit
+```
+
+Перед production-ready состоянием проекта дополнительно обязателен:
+
+```bash
 npm run build
 ```
 
-Для изменений базы:
+Проверки Prisma:
 
 ```bash
 npx prisma validate
 npx prisma migrate status
-```
-
-Для соответствующих функциональных изменений:
-
-```bash
-npx playwright test
-```
-
-Unit tests:
-
-```bash
-npm run test:unit
 ```
 
 ---
@@ -943,7 +1105,7 @@ BLOCKED
 CANCELLED
 ```
 
-Изменение статуса является серверной операцией и в дальнейшем должно учитывать:
+Изменение статуса является серверной операцией и должно учитывать:
 
 * authentication;
 * authorization;
@@ -1061,14 +1223,20 @@ Production
 
 ### Department Members
 
-* [ ] Department membership API
-* [ ] Add member
+* [x] Department membership model
+* [x] Department Members GET API
+* [x] Add member API
+* [x] Membership permission checks
+* [x] Role validation
+* [x] Manager validation
+* [x] Manager hierarchy relation
+* [x] Duplicate membership protection
+* [x] Activity logging for member addition
+* [x] Department Members API tests
 * [ ] Remove member
 * [ ] Change member role
-* [ ] Assign manager
-* [ ] Manager/subordinate hierarchy
-* [ ] Membership permissions
-* [ ] Membership E2E tests
+* [ ] Change manager
+* [ ] Full membership lifecycle tests
 * [ ] Organization UI
 
 ### Teams
@@ -1112,6 +1280,8 @@ Production
 
 ## Phase 7 — Activity and Audit
 
+* [x] Activity service
+* [x] `MEMBER_ADDED` Activity
 * [ ] Human-readable Activity feed
 * [ ] Immutable Audit history
 * [ ] Critical mutation logging
@@ -1172,8 +1342,9 @@ Production
 * [ ] Session security review
 * [ ] Upload restrictions
 * [ ] API data minimization
-* [ ] Error handling
-* [ ] Request logging
+* [ ] Centralized error handling
+* [ ] Request / correlation ID
+* [ ] Server-side error logging
 * [ ] Health endpoint
 * [ ] Backup strategy
 * [ ] Restore testing
@@ -1242,6 +1413,8 @@ Push
 
 Не допускается считать функцию завершённой только на основании визуального результата.
 
+Для серверных функциональных срезов, которые пока не имеют UI, Definition of Done применяется к существующей серверной части; UI добавляется в соответствующем UI-срезе.
+
 ---
 
 # Security Baseline
@@ -1253,7 +1426,7 @@ Push
 * authentication выполняется на сервере;
 * authorization выполняется на сервере;
 * пользовательские идентификаторы не считаются доверенными;
-* `departmentId`, `userId`, `roleId` и аналогичные параметры проверяются сервером;
+* `departmentId`, `userId`, `roleId`, `managerId` и аналогичные параметры проверяются сервером;
 * Prisma используется для параметризованных запросов;
 * критические операции журналируются;
 * Audit должен быть защищён от обычного пользовательского изменения;
@@ -1281,6 +1454,9 @@ GET    /api/users
 
 GET    /api/departments
 POST   /api/departments
+
+GET    /api/departments/:id/members
+POST   /api/departments/:id/members
 ```
 
 Запланированные API:
@@ -1288,8 +1464,6 @@ POST   /api/departments
 ```text
 GET    /api/departments/:id
 
-GET    /api/departments/:id/members
-POST   /api/departments/:id/members
 PATCH  /api/departments/:id/members/:memberId
 DELETE /api/departments/:id/members/:memberId
 
@@ -1312,7 +1486,7 @@ API будет расширяться по мере реализации соо�
 
 # API Error Model
 
-Основные HTTP-коды:
+Ожидаемые HTTP-коды:
 
 ```text
 200 OK
@@ -1326,7 +1500,7 @@ API будет расширяться по мере реализации соо�
 500 Internal Server Error
 ```
 
-API должен использовать единообразный формат ошибок.
+API использует единообразный формат ожидаемых ошибок.
 
 Пример:
 
@@ -1338,6 +1512,24 @@ API должен использовать единообразный форма�
   }
 }
 ```
+
+Централизованный механизм обработки непредвиденных серверных ошибок пока не реализован.
+
+На этапе Hardening планируется добавить:
+
+```text
+Unexpected server error
+        ↓
+Centralized error handler
+        ↓
+Request / Correlation ID
+        ↓
+Detailed server-side logging
+        ↓
+Safe client response
+```
+
+Технические stack traces и внутренние детали реализации не должны передаваться клиенту в production.
 
 ---
 
@@ -1355,13 +1547,13 @@ API должен использовать единообразный форма�
 7. Реализовать API / Service
 8. Добавить server-side permissions
 9. Добавить validation
-10. Добавить UI
+10. Добавить UI, если он входит в текущий срез
 11. Добавить Activity / Audit
 12. Добавить notifications, если необходимо
 13. Добавить tests
 14. Выполнить typecheck
 15. Выполнить lint
-16. Выполнить build
+16. Выполнить build перед production-ready состоянием
 17. Обновить документацию
 18. Создать Git commit
 19. Push в remote
@@ -1375,7 +1567,7 @@ API должен использовать единообразный форма�
 
 # Current Development State
 
-На текущем этапе реализованы и проверены:
+На текущем этапе реализованы:
 
 ```text
 Project Foundation
@@ -1406,6 +1598,10 @@ RBAC Permission Model
         ✓
 Role-permission Mapping
         ✓
+Global SYSTEM_ADMIN scope
+        ✓
+Department-scoped roles
+        ✓
 Server-side RBAC
         ✓
 Users Authorization
@@ -1420,43 +1616,59 @@ Departments Authorization
         ✓
 Departments E2E Tests
         ✓
+Department Members GET API
+        ✓
+Department Members POST API
+        ✓
+Membership Validation
+        ✓
+Manager Validation
+        ✓
+Membership Permission Checks
+        ✓
+MEMBER_ADDED Activity
+        ✓
+Department Members API Tests
+        ✓
+TypeScript Typecheck
+        ✓
+ESLint
+        ✓
 ```
 
-Последний завершённый функциональный commit:
+Последний завершённый функциональный срез:
 
 ```text
-3bdf232 feat: add departments API
+Department Members API
+        +
+Activity Audit for MEMBER_ADDED
 ```
 
-Remote:
+Изменения этого среза зафиксированы в Git и отправлены в:
 
 ```text
 origin/main
 ```
 
-Следующая задача:
+Текущая задача проекта:
 
 ```text
-Department Members API
+Расширение Department Members
 ```
 
-Следующий вертикальный срез должен покрыть:
+Следующие серверные операции организационного модуля:
 
 ```text
-DepartmentMember
-      ↓
-API / Service
-      ↓
-Role / Permission checks
-      ↓
-Manager hierarchy
-      ↓
-Validation
-      ↓
-E2E tests
+Change member role
+        ↓
+Change manager
+        ↓
+Remove member
+        ↓
+Full membership lifecycle tests
 ```
 
-После завершения серверного контракта и его проверок можно переходить к UI соответствующего организационного модуля.
+После завершения серверного контракта организационного модуля можно переходить к UI соответствующего раздела.
 
 ---
 
