@@ -55,6 +55,7 @@ export const GET = apiHandler(async () => {
       members: {
         some: {
           userId: currentUser.id,
+          leftAt: null,
         },
       },
     },
@@ -123,6 +124,7 @@ export const POST = apiHandler(async (request: Request) => {
       entityType: "Department",
       entityId: createdDepartment.id,
       description: `Department ${createdDepartment.name} was created.`,
+      departmentId: createdDepartment.id,
       metadata: {
         departmentId: createdDepartment.id,
         name: createdDepartment.name,

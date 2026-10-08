@@ -39,12 +39,11 @@ export async function hasPermission(
     return false;
   }
 
-  const membership = await prisma.departmentMember.findUnique({
+  const membership = await prisma.departmentMember.findFirst({
     where: {
-      departmentId_userId: {
-        departmentId,
-        userId,
-      },
+      departmentId,
+      userId,
+      leftAt: null,
     },
     select: {
       role: {

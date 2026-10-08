@@ -42,11 +42,14 @@ enum ActivityType {
   TASK_PRIORITY_CHANGED
   TASK_DUE_DATE_CHANGED
   MEMBER_ADDED
+  MANAGER_CHANGED
+  MEMBER_REMOVED
   ROLE_CHANGED
   DEPARTMENT_CREATED
   PROJECT_CREATED
   COMMENT_ADDED
   TASK_UPDATED
+  USER_LOGGED_IN
 }
 
 enum NotificationType {
@@ -150,6 +153,7 @@ model Department {
   sourceTasks   Task[]             @relation("TaskSourceDepartment")
   assignedTasks Task[]             @relation("TaskAssignedDepartment")
   projects      Project[]
+  activities    ActivityLog[]
 
   @@index([createdById])
   @@index([managerId])
@@ -157,13 +161,14 @@ model Department {
 }
 
 model DepartmentMember {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   departmentId String
   userId       String
   roleId       String
   managerId    String?
-  joinedAt     DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  joinedAt     DateTime  @default(now())
+  leftAt       DateTime?
+  updatedAt    DateTime  @updatedAt
 
   department   Department         @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -174,6 +179,7 @@ model DepartmentMember {
   @@unique([departmentId, userId])
   @@index([userId])
   @@index([departmentId])
+  @@index([departmentId, leftAt])
   @@index([managerId])
   @@index([roleId])
 }
@@ -306,20 +312,23 @@ model Comment {
 }
 
 model ActivityLog {
-  id          String       @id @default(cuid())
-  type        ActivityType
-  taskId      String?
-  actorId     String
-  entityType  String
-  entityId    String
-  description String
-  metadata    Json?
-  createdAt   DateTime     @default(now())
+  id           String       @id @default(cuid())
+  type         ActivityType
+  taskId       String?
+  departmentId String?
+  actorId      String
+  entityType   String
+  entityId     String
+  description  String
+  metadata     Json?
+  createdAt    DateTime     @default(now())
 
-  task  Task? @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  actor User  @relation("ActivityActor", fields: [actorId], references: [id])
+  task       Task?       @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  actor      User        @relation("ActivityActor", fields: [actorId], references: [id])
 
   @@index([taskId, createdAt])
+  @@index([departmentId, createdAt])
   @@index([actorId, createdAt])
   @@index([entityType, entityId])
   @@index([type, createdAt])

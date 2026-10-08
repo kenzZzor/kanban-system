@@ -18,6 +18,7 @@ const prisma = new PrismaClient({
 });
 
 const SEED_PASSWORD = "DevOnly123!";
+const FORMER_MEMBER_LEFT_AT = new Date("2024-01-15T00:00:00.000Z");
 
 async function main() {
   console.log("Starting database seed...");
@@ -539,6 +540,26 @@ async function main() {
     },
   });
 
+  const formerMember = await prisma.user.upsert({
+    where: {
+      email: "former.member@kanban.local",
+    },
+    update: {
+      firstName: "Former",
+      lastName: "Member",
+      passwordHash,
+      systemRoleId: null,
+      isActive: true,
+    },
+    create: {
+      email: "former.member@kanban.local",
+      firstName: "Former",
+      lastName: "Member",
+      passwordHash,
+      isActive: true,
+    },
+  });
+
   // ---------------------------------------------------------
   // Departments
   // ---------------------------------------------------------
@@ -626,6 +647,12 @@ async function main() {
       roleId: roles.VIEWER.id,
     },
     {
+      departmentId: itDepartment.id,
+      userId: formerMember.id,
+      roleId: roles.MANAGER.id,
+      leftAt: FORMER_MEMBER_LEFT_AT,
+    },
+    {
       departmentId: analyticsDepartment.id,
       userId: eve.id,
       roleId: roles.DEPARTMENT_ADMIN.id,
@@ -680,12 +707,14 @@ async function main() {
       update: {
         roleId: membership.roleId,
         managerId,
+        leftAt: membership.leftAt ?? null,
       },
-    create: {
+      create: {
         departmentId: membership.departmentId,
         userId: membership.userId,
         roleId: membership.roleId,
         managerId,
+        leftAt: membership.leftAt ?? null,
       },
     });
 
@@ -919,11 +948,13 @@ async function main() {
       actorId: alice.id,
       entityType: "TASK",
       entityId: taskNew.id,
+      departmentId: taskNew.sourceDepartmentId,
     },
     create: {
       id: "seed-activity-task-created",
       type: "TASK_CREATED",
       taskId: taskNew.id,
+      departmentId: taskNew.sourceDepartmentId,
       actorId: alice.id,
       entityType: "TASK",
       entityId: taskNew.id,
@@ -940,11 +971,13 @@ async function main() {
       actorId: alice.id,
       entityType: "TASK",
       entityId: taskNew.id,
+      departmentId: taskNew.sourceDepartmentId,
     },
     create: {
       id: "seed-activity-task-assigned",
       type: "TASK_ASSIGNED",
       taskId: taskNew.id,
+      departmentId: taskNew.sourceDepartmentId,
       actorId: alice.id,
       entityType: "TASK",
       entityId: taskNew.id,
@@ -961,11 +994,13 @@ async function main() {
       actorId: bob.id,
       entityType: "TASK",
       entityId: crossDepartmentTask.id,
+      departmentId: crossDepartmentTask.sourceDepartmentId,
     },
     create: {
       id: "seed-activity-cross-department",
       type: "TASK_ASSIGNED",
       taskId: crossDepartmentTask.id,
+      departmentId: crossDepartmentTask.sourceDepartmentId,
       actorId: bob.id,
       entityType: "TASK",
       entityId: crossDepartmentTask.id,
@@ -1036,6 +1071,7 @@ async function main() {
   console.log("  eve.admin@kanban.local");
   console.log("  frank.manager@kanban.local");
   console.log("  grace.employee@kanban.local");
+  console.log("  former.member@kanban.local");
 }
 
 main()

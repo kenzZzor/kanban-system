@@ -80,6 +80,18 @@ test.describe("Department Members API", () => {
     expect(body.members).toHaveLength(4);
   });
 
+  test("former manager cannot read members of former department", async ({
+    request,
+  }) => {
+    await login(request, "former.member@kanban.local");
+
+    const response = await request.get(
+      `${BASE_URL}/api/departments/seed-department-it/members`,
+    );
+
+    expect(response.status()).toBe(403);
+  });
+
   test("employee cannot read department members", async ({ request }) => {
     await login(request, "charlie.employee@kanban.local");
 
@@ -131,7 +143,6 @@ test.describe("Department Members API", () => {
     });
   });
 });
-
 
 
 

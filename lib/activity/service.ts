@@ -9,6 +9,7 @@ interface LogActivityParams {
   entityId: string;
   description: string;
   taskId?: string;
+  departmentId?: string;
   metadata?: Prisma.InputJsonValue;
   tx?: Prisma.TransactionClient;
 }
@@ -20,6 +21,7 @@ export async function logActivity({
   entityId,
   description,
   taskId,
+  departmentId,
   metadata,
   tx,
 }: LogActivityParams) {
@@ -33,6 +35,7 @@ export async function logActivity({
       entityId,
       description,
       taskId,
+      departmentId,
       metadata,
     },
   });

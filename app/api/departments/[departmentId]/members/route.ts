@@ -49,7 +49,10 @@ export const GET = apiHandler(async (
   }
 
   const members = await prisma.departmentMember.findMany({
-    where: { departmentId },
+    where: {
+      departmentId,
+      leftAt: null,
+    },
     orderBy: { joinedAt: "asc" },
     select: {
       id: true,
@@ -156,12 +159,11 @@ export const POST = apiHandler(async (
     throw new ValidationError("Cannot add an inactive user to a department.");
   }
 
-  const existingMember = await prisma.departmentMember.findUnique({
+  const existingMember = await prisma.departmentMember.findFirst({
     where: {
-      departmentId_userId: {
-        departmentId,
-        userId,
-      },
+      departmentId,
+      userId,
+      leftAt: null,
     },
     select: { id: true },
   });
@@ -198,6 +200,7 @@ export const POST = apiHandler(async (
       where: {
         id: managerId,
         departmentId,
+        leftAt: null,
       },
       select: {
         id: true,
@@ -272,6 +275,7 @@ export const POST = apiHandler(async (
         entityType: "DepartmentMember",
         entityId: createdMember.id,
         description: `User ${userId} was added to department ${departmentId}.`,
+        departmentId,
         metadata: {
           departmentId,
           userId,
