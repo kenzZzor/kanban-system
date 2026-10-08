@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@/app/generated/prisma/client";
+
 import { logActivity } from "@/lib/activity/service";
 
-import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/api/errors";
+import { apiHandler, requireUser } from "@/lib/api/handler";
 import { prisma } from "@/lib/db";
 import { PERMISSION_CODES } from "@/lib/permissions/codes";
 import { hasPermission } from "@/lib/permissions/service";
@@ -13,23 +21,11 @@ interface RouteContext {
   }>;
 }
 
-export async function GET(
+export const GET = apiHandler(async (
   _request: Request,
   { params }: RouteContext,
-) {
-  const currentUser = await getCurrentUser();
-
-  if (!currentUser) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Authentication required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
+) => {
+  const currentUser = await requireUser();
 
   const { departmentId } = await params;
 
@@ -40,15 +36,7 @@ export async function GET(
   );
 
   if (!allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "FORBIDDEN",
-          message: "You do not have permission to perform this action.",
-        },
-      },
-      { status: 403 },
-    );
+    throw new ForbiddenError();
   }
 
   const department = await prisma.department.findUnique({
@@ -57,15 +45,7 @@ export async function GET(
   });
 
   if (!department) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "NOT_FOUND",
-          message: "Department not found.",
-        },
-      },
-      { status: 404 },
-    );
+    throw new NotFoundError("Department not found.");
   }
 
   const members = await prisma.departmentMember.findMany({
@@ -109,7 +89,7 @@ export async function GET(
   });
 
   return NextResponse.json({ members });
-}
+});
 
 
 const createMemberSchema = z.object({
@@ -123,23 +103,11 @@ const createMemberSchema = z.object({
   managerId: z.string().trim().min(1).optional(),
 });
 
-export async function POST(
+export const POST = apiHandler(async (
   request: Request,
   { params }: RouteContext,
-) {
-  const currentUser = await getCurrentUser();
-
-  if (!currentUser) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Authentication required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
+) => {
+  const currentUser = await requireUser();
 
   const { departmentId } = await params;
 
@@ -150,15 +118,7 @@ export async function POST(
   );
 
   if (!allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "FORBIDDEN",
-          message: "You do not have permission to perform this action.",
-        },
-      },
-      { status: 403 },
-    );
+    throw new ForbiddenError();
   }
 
   let body: unknown;
@@ -166,33 +126,10 @@ export async function POST(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: "INVALID_REQUEST",
-          message: "Invalid JSON body.",
-        },
-      },
-      { status: 400 },
-    );
+    throw new ValidationError("Request body must be valid JSON.");
   }
 
-  const parsed = createMemberSchema.safeParse(body);
-
-  if (!parsed.success) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Invalid request body.",
-          details: parsed.error.flatten(),
-        },
-      },
-      { status: 400 },
-    );
-  }
-
-  const { userId, roleCode, managerId } = parsed.data;
+  const { userId, roleCode, managerId } = createMemberSchema.parse(body);
 
   const department = await prisma.department.findUnique({
     where: { id: departmentId },
@@ -200,15 +137,7 @@ export async function POST(
   });
 
   if (!department) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "NOT_FOUND",
-          message: "Department not found.",
-        },
-      },
-      { status: 404 },
-    );
+    throw new NotFoundError("Department not found.");
   }
 
   const user = await prisma.user.findUnique({
@@ -220,27 +149,11 @@ export async function POST(
   });
 
   if (!user) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "NOT_FOUND",
-          message: "User not found.",
-        },
-      },
-      { status: 404 },
-    );
+    throw new NotFoundError("User not found.");
   }
 
   if (!user.isActive) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "INVALID_REQUEST",
-          message: "Cannot add an inactive user to a department.",
-        },
-      },
-      { status: 400 },
-    );
+    throw new ValidationError("Cannot add an inactive user to a department.");
   }
 
   const existingMember = await prisma.departmentMember.findUnique({
@@ -254,15 +167,7 @@ export async function POST(
   });
 
   if (existingMember) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "CONFLICT",
-          message: "User is already a member of this department.",
-        },
-      },
-      { status: 409 },
-    );
+    throw new ConflictError("User is already a member of this department.");
   }
 
   const role = await prisma.role.findUnique({
@@ -274,15 +179,7 @@ export async function POST(
   });
 
   if (!role) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "INVALID_REQUEST",
-          message: "Department role not found.",
-        },
-      },
-      { status: 400 },
-    );
+    throw new ValidationError("Department role not found.");
   }
 
   if (roleCode === "DEPARTMENT_ADMIN") {
@@ -292,15 +189,7 @@ export async function POST(
     );
 
     if (!isSystemAdmin) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "FORBIDDEN",
-            message: "You cannot assign the DEPARTMENT_ADMIN role.",
-          },
-        },
-        { status: 403 },
-      );
+      throw new ForbiddenError("You cannot assign the DEPARTMENT_ADMIN role.");
     }
   }
 
@@ -312,82 +201,101 @@ export async function POST(
       },
       select: {
         id: true,
+        user: {
+          select: {
+            isActive: true,
+          },
+        },
       },
     });
 
     if (!manager) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "INVALID_REQUEST",
-            message: "Manager must belong to the same department.",
-          },
-        },
-        { status: 400 },
-      );
+      throw new ValidationError("Manager must belong to the same department.");
+    }
+
+    if (!manager.user.isActive) {
+      throw new ValidationError("Manager must be active.");
     }
   }
 
-  const member = await prisma.departmentMember.create({
-    data: {
-      departmentId,
-      userId,
-      roleId: role.id,
-      managerId: managerId ?? null,
-    },
-    select: {
-      id: true,
-      joinedAt: true,
-      updatedAt: true,
-      user: {
+  let member;
+
+  try {
+    member = await prisma.$transaction(async (tx) => {
+      const createdMember = await tx.departmentMember.create({
+        data: {
+          departmentId,
+          userId,
+          roleId: role.id,
+          managerId: managerId ?? null,
+        },
         select: {
           id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          middleName: true,
-          isActive: true,
-        },
-      },
-      role: {
-        select: {
-          code: true,
-          name: true,
-          description: true,
-        },
-      },
-      manager: {
-        select: {
-          id: true,
+          joinedAt: true,
+          updatedAt: true,
           user: {
             select: {
               id: true,
+              email: true,
               firstName: true,
               lastName: true,
               middleName: true,
+              isActive: true,
+            },
+          },
+          role: {
+            select: {
+              code: true,
+              name: true,
+              description: true,
+            },
+          },
+          manager: {
+            select: {
+              id: true,
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  middleName: true,
+                },
+              },
             },
           },
         },
-      },
-    },
-  });
+      });
 
-  await logActivity({
-  type: "MEMBER_ADDED",
-  actorId: currentUser.id,
-  entityType: "DepartmentMember",
-  entityId: member.id,
-  description: `User ${userId} was added to department ${departmentId}.`,
-  metadata: {
-    departmentId,
-    userId,
-    roleCode,
-    managerId: managerId ?? null,
-  },
-});
+      await logActivity({
+        type: "MEMBER_ADDED",
+        actorId: currentUser.id,
+        entityType: "DepartmentMember",
+        entityId: createdMember.id,
+        description: `User ${userId} was added to department ${departmentId}.`,
+        metadata: {
+          departmentId,
+          userId,
+          roleCode,
+          managerId: managerId ?? null,
+        },
+        tx,
+      });
+
+      return createdMember;
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new ConflictError("User is already a member of this department.");
+    }
+
+    throw error;
+  }
 
   return NextResponse.json(
     { member },
     { status: 201 },
   );
-}
+});

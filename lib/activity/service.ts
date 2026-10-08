@@ -10,6 +10,7 @@ interface LogActivityParams {
   description: string;
   taskId?: string;
   metadata?: Prisma.InputJsonValue;
+  tx?: Prisma.TransactionClient;
 }
 
 export async function logActivity({
@@ -20,8 +21,11 @@ export async function logActivity({
   description,
   taskId,
   metadata,
+  tx,
 }: LogActivityParams) {
-  return prisma.activityLog.create({
+  const db = tx ?? prisma;
+
+  return db.activityLog.create({
     data: {
       type,
       actorId,

@@ -48,7 +48,10 @@ test("user can login, access current user, and logout", async ({ request }) => {
   const unauthorizedBody = await unauthorizedResponse.json();
 
   expect(unauthorizedBody).toEqual({
-    error: "Unauthorized",
+    error: {
+      code: "UNAUTHORIZED",
+      message: "Authentication required.",
+    },
   });
 });
 
@@ -66,7 +69,10 @@ test("login rejects invalid password", async ({ request }) => {
   const body = await response.json();
 
   expect(body).toEqual({
-    error: "Invalid email or password",
+    error: {
+      code: "UNAUTHORIZED",
+      message: "Invalid email or password.",
+    },
   });
 });
 
@@ -82,6 +88,12 @@ test("login rejects missing credentials", async ({ request }) => {
   const body = await response.json();
 
   expect(body).toEqual({
-    error: "Email and password are required",
+    error: {
+      code: "VALIDATION_ERROR",
+      message: "Invalid request data.",
+      details: {
+        password: expect.any(Array),
+      },
+    },
   });
 });

@@ -1,18 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentUser } from "@/lib/auth/current-user";
+import { apiHandler, requireUser } from "@/lib/api/handler";
 
-export async function GET() {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    return NextResponse.json(
-      {
-        error: "Unauthorized",
-      },
-      { status: 401 },
-    );
-  }
+export const GET = apiHandler(async () => {
+  const user = await requireUser();
 
   return NextResponse.json({
     user: {
@@ -25,4 +16,4 @@ export async function GET() {
       systemRoleId: user.systemRoleId,
     },
   });
-}
+});

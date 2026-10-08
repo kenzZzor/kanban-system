@@ -142,7 +142,7 @@ test("department creation validates request data", async ({ page }) => {
 
   const body = await response.json();
 
-  expect(body.error.code).toBe("BAD_REQUEST");
+  expect(body.error.code).toBe("VALIDATION_ERROR");
   expect(body.error.message).toBe("Invalid request data.");
   expect(body.error.details.name).toBeInstanceOf(Array);
 });

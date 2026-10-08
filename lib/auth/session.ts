@@ -38,8 +38,26 @@ export async function getSession(token: string) {
     where: {
       tokenHash,
     },
-    include: {
-      user: true,
+    select: {
+      id: true,
+      tokenHash: true,
+      userId: true,
+      expiresAt: true,
+      createdAt: true,
+      lastUsedAt: true,
+      user: {
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          middleName: true,
+          isActive: true,
+          systemRoleId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
     },
   });
 

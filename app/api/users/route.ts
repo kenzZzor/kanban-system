@@ -1,24 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentUser } from "@/lib/auth/current-user";
+import { ForbiddenError } from "@/lib/api/errors";
+import { apiHandler, requireUser } from "@/lib/api/handler";
 import { prisma } from "@/lib/db";
 import { hasPermission } from "@/lib/permissions/service";
 import { PERMISSION_CODES } from "@/lib/permissions/codes";
 
-export async function GET() {
-  const currentUser = await getCurrentUser();
-
-  if (!currentUser) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Authentication required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
+export const GET = apiHandler(async () => {
+  const currentUser = await requireUser();
 
   const allowed = await hasPermission(
     currentUser.id,
@@ -26,15 +15,7 @@ export async function GET() {
   );
 
   if (!allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "FORBIDDEN",
-          message: "You do not have permission to perform this action.",
-        },
-      },
-      { status: 403 },
-    );
+    throw new ForbiddenError();
   }
 
   const users = await prisma.user.findMany({
@@ -61,4 +42,4 @@ export async function GET() {
   return NextResponse.json({
     users,
   });
-}
+});

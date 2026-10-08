@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentUser } from "@/lib/auth/current-user";
+import { logActivity } from "@/lib/activity/service";
+import { ForbiddenError, ValidationError } from "@/lib/api/errors";
+import { apiHandler, requireUser } from "@/lib/api/handler";
 import { prisma } from "@/lib/db";
 import { PERMISSION_CODES } from "@/lib/permissions/codes";
 import { hasPermission } from "@/lib/permissions/service";
@@ -19,20 +21,8 @@ const createDepartmentSchema = z.object({
     .optional(),
 });
 
-export async function GET() {
-  const currentUser = await getCurrentUser();
-
-  if (!currentUser) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Authentication required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
+export const GET = apiHandler(async () => {
+  const currentUser = await requireUser();
 
   const isSystemAdmin = await hasPermission(
     currentUser.id,
@@ -85,22 +75,10 @@ export async function GET() {
   return NextResponse.json({
     departments,
   });
-}
+});
 
-export async function POST(request: Request) {
-  const currentUser = await getCurrentUser();
-
-  if (!currentUser) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Authentication required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
+export const POST = apiHandler(async (request: Request) => {
+  const currentUser = await requireUser();
 
   const allowed = await hasPermission(
     currentUser.id,
@@ -108,15 +86,7 @@ export async function POST(request: Request) {
   );
 
   if (!allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "FORBIDDEN",
-          message: "You do not have permission to perform this action.",
-        },
-      },
-      { status: 403 },
-    );
+    throw new ForbiddenError();
   }
 
   let body: unknown;
@@ -124,47 +94,43 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: "BAD_REQUEST",
-          message: "Request body must be valid JSON.",
-        },
-      },
-      { status: 400 },
-    );
+    throw new ValidationError("Request body must be valid JSON.");
   }
 
-  const result = createDepartmentSchema.safeParse(body);
+  const data = createDepartmentSchema.parse(body);
 
-  if (!result.success) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "BAD_REQUEST",
-          message: "Invalid request data.",
-          details: result.error.flatten().fieldErrors,
-        },
+  const department = await prisma.$transaction(async (tx) => {
+    const createdDepartment = await tx.department.create({
+      data: {
+        name: data.name,
+        description: data.description || null,
+        createdById: currentUser.id,
       },
-      { status: 400 },
-    );
-  }
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        createdById: true,
+        managerId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-  const department = await prisma.department.create({
-    data: {
-      name: result.data.name,
-      description: result.data.description || null,
-      createdById: currentUser.id,
-    },
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      createdById: true,
-      managerId: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    await logActivity({
+      type: "DEPARTMENT_CREATED",
+      actorId: currentUser.id,
+      entityType: "Department",
+      entityId: createdDepartment.id,
+      description: `Department ${createdDepartment.name} was created.`,
+      metadata: {
+        departmentId: createdDepartment.id,
+        name: createdDepartment.name,
+      },
+      tx,
+    });
+
+    return createdDepartment;
   });
 
   return NextResponse.json(
@@ -173,4 +139,4 @@ export async function POST(request: Request) {
     },
     { status: 201 },
   );
-}
+});

@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
 
+import { SESSION_COOKIE_NAME } from "@/lib/auth/constants";
 import { getSession } from "@/lib/auth/session";
-
-const SESSION_COOKIE_NAME = "kanban_session";
 
 export async function getCurrentUser() {
   const cookieStore = await cookies();
@@ -15,6 +14,10 @@ export async function getCurrentUser() {
   const session = await getSession(token);
 
   if (!session) {
+    return null;
+  }
+
+  if (!session.user.isActive) {
     return null;
   }
 
