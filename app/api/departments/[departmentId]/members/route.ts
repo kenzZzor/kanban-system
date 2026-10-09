@@ -12,6 +12,10 @@ import {
 } from "@/lib/api/errors";
 import { apiHandler, requireUser } from "@/lib/api/handler";
 import { prisma } from "@/lib/db";
+import {
+  isRetryableTransactionConflict,
+  runSerializableTransaction,
+} from "@/lib/db-transaction";
 import { PERMISSION_CODES } from "@/lib/permissions/codes";
 import { hasPermission } from "@/lib/permissions/service";
 
@@ -159,19 +163,6 @@ export const POST = apiHandler(async (
     throw new ValidationError("Cannot add an inactive user to a department.");
   }
 
-  const existingMember = await prisma.departmentMember.findFirst({
-    where: {
-      departmentId,
-      userId,
-      leftAt: null,
-    },
-    select: { id: true },
-  });
-
-  if (existingMember) {
-    throw new ConflictError("User is already a member of this department.");
-  }
-
   const role = await prisma.role.findUnique({
     where: { code: roleCode },
     select: {
@@ -224,75 +215,115 @@ export const POST = apiHandler(async (
   let member;
 
   try {
-    member = await prisma.$transaction(async (tx) => {
-      const createdMember = await tx.departmentMember.create({
-        data: {
-          departmentId,
-          userId,
-          roleId: role.id,
-          managerId: managerId ?? null,
+    member = await runSerializableTransaction(async (tx) => {
+      const existingMember = await tx.departmentMember.findUnique({
+        where: {
+          departmentId_userId: { departmentId, userId },
         },
         select: {
           id: true,
-          joinedAt: true,
-          updatedAt: true,
-          user: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              middleName: true,
-              isActive: true,
-            },
+          leftAt: true,
+        },
+      });
+
+      if (existingMember && existingMember.leftAt === null) {
+        throw new ConflictError("User is already a member of this department.");
+      }
+
+      const memberSelect = {
+        id: true,
+        joinedAt: true,
+        updatedAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            middleName: true,
+            isActive: true,
           },
-          role: {
-            select: {
-              code: true,
-              name: true,
-              description: true,
-            },
+        },
+        role: {
+          select: {
+            code: true,
+            name: true,
+            description: true,
           },
-          manager: {
-            select: {
-              id: true,
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  middleName: true,
-                },
+        },
+        manager: {
+          select: {
+            id: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                middleName: true,
               },
             },
           },
         },
-      });
+      } satisfies Prisma.DepartmentMemberSelect;
+
+      const reactivated = existingMember !== null;
+      const savedMember = existingMember
+        ? await tx.departmentMember.update({
+            where: { id: existingMember.id },
+            data: {
+              roleId: role.id,
+              managerId: managerId ?? null,
+              joinedAt: new Date(),
+              leftAt: null,
+            },
+            select: memberSelect,
+          })
+        : await tx.departmentMember.create({
+            data: {
+              departmentId,
+              userId,
+              roleId: role.id,
+              managerId: managerId ?? null,
+            },
+            select: memberSelect,
+          });
 
       await logActivity({
         type: "MEMBER_ADDED",
         actorId: currentUser.id,
         entityType: "DepartmentMember",
-        entityId: createdMember.id,
-        description: `User ${userId} was added to department ${departmentId}.`,
+        entityId: savedMember.id,
+        description: reactivated
+          ? `User ${userId} was reactivated in department ${departmentId}.`
+          : `User ${userId} was added to department ${departmentId}.`,
         departmentId,
         metadata: {
           departmentId,
+          memberId: savedMember.id,
           userId,
           roleCode,
           managerId: managerId ?? null,
+          reactivated,
         },
         tx,
       });
 
-      return createdMember;
+      return savedMember;
     });
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      throw new ConflictError("User is already a member of this department.");
+      throw new ConflictError(
+        "User is already a member of this department.",
+      );
+    }
+
+    if (isRetryableTransactionConflict(error)) {
+      throw new ConflictError(
+        "Membership changed concurrently. Refresh and try again.",
+      );
     }
 
     throw error;

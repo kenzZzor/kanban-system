@@ -317,3 +317,101 @@ export async function updateDepartmentMember({
 
   return member;
 }
+
+interface RemoveDepartmentMemberParams {
+  tx: Prisma.TransactionClient;
+  actorId: string;
+  departmentId: string;
+  memberId: string;
+}
+
+export async function removeDepartmentMember({
+  tx,
+  actorId,
+  departmentId,
+  memberId,
+}: RemoveDepartmentMemberParams) {
+  const targetMember = await tx.departmentMember.findFirst({
+    where: {
+      id: memberId,
+      departmentId,
+      leftAt: null,
+    },
+    select: {
+      id: true,
+      userId: true,
+      managerId: true,
+      role: {
+        select: { code: true },
+      },
+    },
+  });
+
+  if (!targetMember) {
+    throw new NotFoundError("Department member not found.");
+  }
+
+  if (targetMember.role.code === "DEPARTMENT_ADMIN") {
+    const activeDepartmentAdminCount = await tx.departmentMember.count({
+      where: {
+        departmentId,
+        leftAt: null,
+        role: { code: "DEPARTMENT_ADMIN" },
+      },
+    });
+
+    if (activeDepartmentAdminCount <= 1) {
+      throw new ConflictError(
+        "Cannot remove the last active department admin.",
+      );
+    }
+  }
+
+  const activeSubordinateCount = await tx.departmentMember.count({
+    where: {
+      departmentId,
+      managerId: targetMember.id,
+      leftAt: null,
+    },
+  });
+
+  if (activeSubordinateCount > 0) {
+    throw new ConflictError(
+      "Reassign or clear active subordinates before removing this member.",
+    );
+  }
+
+  const removedAt = new Date();
+  const member = await tx.departmentMember.update({
+    where: { id: targetMember.id },
+    data: {
+      leftAt: removedAt,
+      managerId: null,
+    },
+    select: {
+      id: true,
+      userId: true,
+      departmentId: true,
+      leftAt: true,
+    },
+  });
+
+  await logActivity({
+    type: "MEMBER_REMOVED",
+    actorId,
+    entityType: "DepartmentMember",
+    entityId: member.id,
+    description: `User ${member.userId} was removed from department ${departmentId}.`,
+    departmentId,
+    metadata: {
+      departmentId,
+      memberId: member.id,
+      userId: member.userId,
+      previousRoleCode: targetMember.role.code,
+      removedAt: removedAt.toISOString(),
+    },
+    tx,
+  });
+
+  return member;
+}

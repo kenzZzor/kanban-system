@@ -112,7 +112,6 @@ test.describe("Department Member Update API", () => {
         },
       },
     );
-
     expect(response.status()).toBe(200);
 
     const body = await response.json();
