@@ -99,6 +99,7 @@ Examples of domain events include `TASK_CREATED`, `TASK_ASSIGNED`, `TASK_STATUS_
 
 ## UI and UX
 
+- Before implementing or redesigning any UI, read and follow `docs/UI_DESIGN_SYSTEM.md`. It defines visual and interaction standards; it does not override business requirements, API contracts, server-side authorization or this file. If a conflict exists, report it and ask the owner rather than silently choosing.
 - Desktop-first corporate interface, responsive for laptop and tablet.
 - Task is the central business object.
 - Every important screen must handle loading, empty, no-results, error and permission states.
