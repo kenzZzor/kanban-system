@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
+import type { Prisma } from "@/app/generated/prisma/client";
+
 import { prisma } from "@/lib/db";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
@@ -96,6 +98,19 @@ export async function deleteSession(token: string) {
   await prisma.session.deleteMany({
     where: {
       tokenHash,
+    },
+  });
+}
+
+export async function deleteSessionsForUser(
+  userId: string,
+  tx?: Prisma.TransactionClient,
+) {
+  const db = tx ?? prisma;
+
+  await db.session.deleteMany({
+    where: {
+      userId,
     },
   });
 }

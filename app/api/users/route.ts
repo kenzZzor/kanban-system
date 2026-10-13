@@ -9,7 +9,10 @@ import { logActivity } from "@/lib/activity/service";
 import { prisma } from "@/lib/db";
 import { hasPermission } from "@/lib/permissions/service";
 import { PERMISSION_CODES } from "@/lib/permissions/codes";
-import { generateTemporaryPassword } from "@/lib/services/users";
+import {
+  generateTemporaryPassword,
+  userManagementSelect,
+} from "@/lib/services/users";
 
 const createUserSchema = z.object({
   email: z.string().trim().toLowerCase().email("Valid email is required."),
@@ -49,21 +52,7 @@ export const GET = apiHandler(async () => {
     orderBy: {
       createdAt: "asc",
     },
-    select: {
-      id: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-      middleName: true,
-      isActive: true,
-      createdAt: true,
-      systemRole: {
-        select: {
-          code: true,
-          name: true,
-        },
-      },
-    },
+    select: userManagementSelect,
   });
 
   return NextResponse.json({
@@ -120,24 +109,7 @@ export const POST = apiHandler(async (request: Request) => {
           systemRoleId: null,
           isActive: true,
         },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          middleName: true,
-          isActive: true,
-          passwordMustChange: true,
-          temporaryPasswordExpiresAt: true,
-          passwordChangedAt: true,
-          createdAt: true,
-          systemRole: {
-            select: {
-              code: true,
-              name: true,
-            },
-          },
-        },
+        select: userManagementSelect,
       });
 
       await logActivity({

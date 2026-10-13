@@ -58,7 +58,7 @@ test.afterAll(async () => {
 });
 
 test.describe("Create global user UI", () => {
-  test("system admin sees navigation link and creates a real account", async ({
+  test("system admin sees users navigation and creates a real account", async ({
     page,
   }) => {
     const email = uniqueEmail("ui.created");
@@ -66,10 +66,12 @@ test.describe("Create global user UI", () => {
 
     await login(page);
 
-    const navLink = page.getByRole("link", { name: "Создать аккаунт" }).first();
+    const navLink = page.getByRole("link", { name: "Пользователи" }).first();
     await expect(navLink).toBeVisible();
     await navLink.click();
 
+    await expect(page).toHaveURL("/users");
+    await page.getByRole("link", { name: "Создать аккаунт" }).click();
     await expect(page).toHaveURL("/users/new");
     await expect(page.getByRole("heading", { name: "Создание аккаунта" }))
       .toBeVisible();
@@ -105,7 +107,12 @@ test.describe("Create global user UI", () => {
   }) => {
     await login(page, departmentAdmin);
 
-    await expect(page.getByRole("link", { name: "Создать аккаунт" }))
+    await expect(page.getByRole("link", { name: "Пользователи" }))
+      .toHaveCount(0);
+
+    await page.goto("/users");
+    await expect(page).toHaveURL("/");
+    await expect(page.getByRole("heading", { name: "Пользователи" }))
       .toHaveCount(0);
 
     await page.goto("/users/new");

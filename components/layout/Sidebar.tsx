@@ -91,8 +91,8 @@ function NavigationLinks({
     ? [
         ...navItems,
         {
-          name: "Создать аккаунт",
-          href: "/users/new",
+          name: "Пользователи",
+          href: "/users",
           disabled: false,
           icon: UsersIcon,
         },
