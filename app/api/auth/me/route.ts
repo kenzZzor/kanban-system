@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { apiHandler, requireUser } from "@/lib/api/handler";
 
 export const GET = apiHandler(async () => {
-  const user = await requireUser();
+  const user = await requireUser({ allowPasswordChangeRequired: true });
 
   return NextResponse.json({
     user: {
@@ -13,6 +13,8 @@ export const GET = apiHandler(async () => {
       lastName: user.lastName,
       middleName: user.middleName,
       isActive: user.isActive,
+      passwordMustChange: user.passwordMustChange,
+      temporaryPasswordExpiresAt: user.temporaryPasswordExpiresAt,
       systemRoleId: user.systemRoleId,
     },
   });

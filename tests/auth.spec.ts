@@ -14,8 +14,9 @@ test("user can login, access current user, and logout", async ({ request }) => {
 
   const loginBody = await loginResponse.json();
 
-  expect(loginBody).toEqual({
+  expect(loginBody).toMatchObject({
     message: "Login successful",
+    passwordChangeRequired: false,
   });
 
   const meResponse = await request.get("/api/auth/me");

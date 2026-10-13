@@ -37,6 +37,12 @@ export class ForbiddenError extends AppError {
   }
 }
 
+export class PasswordChangeRequiredError extends AppError {
+  constructor(message = "Password change is required before continuing.") {
+    super(403, "PASSWORD_CHANGE_REQUIRED", message);
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(message = "Resource not found.") {
     super(404, "NOT_FOUND", message);

@@ -43,10 +43,21 @@ export const POST = apiHandler(async (request: Request) => {
     throw new UnauthorizedError("Invalid email or password.");
   }
 
+  if (
+    user.passwordMustChange &&
+    (user.temporaryPasswordExpiresAt === null ||
+      user.temporaryPasswordExpiresAt <= new Date())
+  ) {
+    throw new UnauthorizedError(
+      "Temporary password has expired. Contact your administrator.",
+    );
+  }
+
   const { token } = await createSession(user.id);
 
   const response = NextResponse.json({
     message: "Login successful",
+    passwordChangeRequired: user.passwordMustChange,
   });
 
   response.cookies.set({

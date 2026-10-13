@@ -5,6 +5,10 @@ import { LoginForm } from "@/components/auth/LoginForm";
 export default async function LoginPage() {
   const user = await getCurrentUser();
 
+  if (user?.passwordMustChange) {
+    redirect("/change-password");
+  }
+
   if (user) {
     redirect("/");
   }

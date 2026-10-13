@@ -25,6 +25,24 @@ test.describe("Authentication E2E", () => {
     await expect(page.locator("aside")).toContainText(`${testUser.firstName} ${testUser.lastName}`);
   });
 
+  test("login password visibility can be toggled without clearing input", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+
+    const passwordInput = page.locator("#password");
+    await expect(passwordInput).toHaveAttribute("type", "password");
+
+    await passwordInput.fill(testUser.password);
+    await page.getByRole("button", { name: "Показать пароль" }).click();
+    await expect(passwordInput).toHaveAttribute("type", "text");
+    await expect(passwordInput).toHaveValue(testUser.password);
+
+    await page.getByRole("button", { name: "Скрыть пароль" }).click();
+    await expect(passwordInput).toHaveAttribute("type", "password");
+    await expect(passwordInput).toHaveValue(testUser.password);
+  });
+
   test("authenticated user is redirected from login to dashboard", async ({ page }) => {
     // Login first
     await page.goto("/login");

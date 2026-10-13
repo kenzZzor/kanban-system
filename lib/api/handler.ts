@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { AppError, InternalError, UnauthorizedError } from "@/lib/api/errors";
+import {
+  AppError,
+  InternalError,
+  PasswordChangeRequiredError,
+  UnauthorizedError,
+} from "@/lib/api/errors";
 
 type RouteHandler<TContext = unknown> = (
   request: Request,
@@ -50,11 +55,19 @@ export function apiHandler<TContext = unknown>(
   };
 }
 
-export async function requireUser() {
+interface RequireUserOptions {
+  allowPasswordChangeRequired?: boolean;
+}
+
+export async function requireUser(options: RequireUserOptions = {}) {
   const user = await getCurrentUser();
 
   if (!user) {
     throw new UnauthorizedError();
+  }
+
+  if (user.passwordMustChange && !options.allowPasswordChangeRequired) {
+    throw new PasswordChangeRequiredError();
   }
 
   return user;

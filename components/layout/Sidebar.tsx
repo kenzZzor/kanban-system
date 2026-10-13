@@ -11,6 +11,7 @@ interface SidebarProps {
     lastName: string;
     email: string;
   };
+  isSystemAdmin: boolean;
 }
 
 type IconProps = {
@@ -62,14 +63,41 @@ function TasksIcon({ className = "" }: IconProps) {
   );
 }
 
+function UsersIcon({ className = "" }: IconProps) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={className} fill="none">
+      <path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M17 8v6M14 11h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const navItems = [
   { name: "Департаменты", href: "/departments", disabled: false, icon: DepartmentsIcon },
   { name: "Проекты", href: "#", disabled: true, icon: ProjectsIcon },
   { name: "Задачи", href: "#", disabled: true, icon: TasksIcon },
 ];
 
-function NavigationLinks({ onNavigate }: { onNavigate?: () => void }) {
+function NavigationLinks({
+  isSystemAdmin,
+  onNavigate,
+}: {
+  isSystemAdmin: boolean;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
+  const visibleNavItems = isSystemAdmin
+    ? [
+        ...navItems,
+        {
+          name: "Создать аккаунт",
+          href: "/users/new",
+          disabled: false,
+          icon: UsersIcon,
+        },
+      ]
+    : navItems;
 
   return (
     <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-5" aria-label="Основная навигация">
@@ -77,7 +105,7 @@ function NavigationLinks({ onNavigate }: { onNavigate?: () => void }) {
         Рабочее пространство
       </div>
       <div className="space-y-1">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
@@ -138,7 +166,7 @@ function ProductHeader({ id, onNavigate }: { id?: string; onNavigate?: () => voi
   );
 }
 
-export function Sidebar({ user }: SidebarProps) {
+export function Sidebar({ user, isSystemAdmin }: SidebarProps) {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -248,7 +276,7 @@ export function Sidebar({ user }: SidebarProps) {
                 <span aria-hidden="true">×</span>
               </button>
             </div>
-            <NavigationLinks onNavigate={closeMobileNav} />
+            <NavigationLinks isSystemAdmin={isSystemAdmin} onNavigate={closeMobileNav} />
             <UserMenu user={user} />
           </div>
         </div>
@@ -258,7 +286,7 @@ export function Sidebar({ user }: SidebarProps) {
         <div className="border-b border-border px-5 py-5">
           <ProductHeader />
         </div>
-        <NavigationLinks />
+        <NavigationLinks isSystemAdmin={isSystemAdmin} />
         <UserMenu user={user} />
       </aside>
     </>
