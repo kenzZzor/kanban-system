@@ -41,6 +41,10 @@ enum ActivityType {
   TASK_STATUS_CHANGED
   TASK_PRIORITY_CHANGED
   TASK_DUE_DATE_CHANGED
+  USER_ACCOUNT_CREATED
+  USER_ACCOUNT_DEACTIVATED
+  USER_ACCOUNT_REACTIVATED
+  USER_PASSWORD_RESET
   MEMBER_ADDED
   MANAGER_CHANGED
   MEMBER_REMOVED
@@ -61,16 +65,19 @@ enum NotificationType {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  firstName    String
-  lastName     String
-  middleName   String?
-  systemRoleId String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                         String    @id @default(cuid())
+  email                      String    @unique @db.Citext
+  passwordHash               String
+  passwordMustChange         Boolean   @default(false)
+  temporaryPasswordExpiresAt DateTime?
+  passwordChangedAt          DateTime?
+  firstName                  String
+  lastName                   String
+  middleName                 String?
+  systemRoleId               String?
+  isActive                   Boolean   @default(true)
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
   systemRole         Role?              @relation("UserSystemRole", fields: [systemRoleId], references: [id])
   memberships        DepartmentMember[]
