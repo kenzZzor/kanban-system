@@ -58,11 +58,11 @@ export function LoginForm() {
   }
 
   return (
-    <div className="w-full max-w-sm p-6 bg-white rounded-lg shadow-md border border-zinc-200">
-      <h1 className="text-2xl font-bold mb-6 text-center text-zinc-900">Вход в систему</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
+    <div className="w-full max-w-sm p-8 bg-surface rounded-2xl shadow-sm border border-border">
+      <h1 className="text-2xl font-semibold mb-8 text-center text-text-primary">Вход в систему</h1>
+      <form onSubmit={onSubmit} className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-1" htmlFor="email">
+          <label className="block text-sm font-medium text-text-secondary mb-2" htmlFor="email">
             Email
           </label>
           <input
@@ -70,12 +70,12 @@ export function LoginForm() {
             name="email"
             type="email"
             required
-            className="w-full px-3 py-2 border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zinc-500"
+            className="w-full px-4 py-2.5 border border-border rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all bg-white"
             placeholder="admin@example.com"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-1" htmlFor="password">
+          <label className="block text-sm font-medium text-text-secondary mb-2" htmlFor="password">
             Пароль
           </label>
           <input
@@ -83,14 +83,14 @@ export function LoginForm() {
             name="password"
             type="password"
             required
-            className="w-full px-3 py-2 border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zinc-500"
+            className="w-full px-4 py-2.5 border border-border rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all bg-white"
           />
         </div>
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="text-danger text-sm font-medium">{error}</p>}
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-2 px-4 bg-zinc-900 text-white rounded-md hover:bg-zinc-800 disabled:opacity-50 transition-colors font-medium"
+          className="w-full py-2.5 px-4 bg-primary text-white rounded-xl hover:bg-primary-hover disabled:opacity-50 transition-all font-semibold shadow-sm active:transform active:scale-[0.98]"
         >
           {isLoading ? "Вход..." : "Войти"}
         </button>

@@ -1,26 +1,49 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-app-bg: #F5F5F7;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #F2F2F7;
+  --color-text-primary: #1D1D1F;
+  --color-text-secondary: #6E6E73;
+  --color-text-disabled: #8E8E93;
+  --color-border: #E5E5EA;
+  --color-border-strong: #C7C7CC;
+  --color-primary: #007AFF;
+  --color-primary-hover: #0066D6;
+  --color-primary-soft: #E8F2FF;
+  --color-success: #248A3D;
+  --color-warning: #B86E00;
+  --color-danger: #D70015;
+  --color-info: #007AFF;
+}
+
+:root {
+  --background: #F5F5F7;
+  --foreground: #1D1D1F;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #000000;
+    --foreground: #F5F5F7;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom focus styles */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
