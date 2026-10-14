@@ -30,6 +30,30 @@ interface ProjectListItem {
   };
 }
 
+interface ProjectMemberItem {
+  id: string;
+  projectId: string;
+  userId: string;
+  joinedAt: string;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    middleName: string | null;
+    isActive: boolean;
+  };
+}
+
+interface ProjectMemberCandidate {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  middleName: string | null;
+  isActive: boolean;
+}
+
 interface ProjectsPageClientProps {
   canReadProjects: boolean;
   canCreateProjects: boolean;
@@ -51,7 +75,18 @@ const createProjectSchema = z.object({
 
 type CreateProjectErrors = Partial<Record<keyof z.infer<typeof createProjectSchema>, string>>;
 
+type MemberActionState =
+  | {
+      kind: "add" | "remove";
+      targetId: string;
+    }
+  | null;
+
 function getApiErrorMessage(status: number, message?: string) {
+  if (status === 400) {
+    return message || "Некорректные данные запроса.";
+  }
+
   if (status === 401) {
     return "Сессия истекла. Выполните вход снова.";
   }
@@ -61,7 +96,7 @@ function getApiErrorMessage(status: number, message?: string) {
   }
 
   if (status === 404) {
-    return "Подразделение не найдено или недоступно.";
+    return "Ресурс не найден или недоступен.";
   }
 
   if (status === 409) {
@@ -69,6 +104,14 @@ function getApiErrorMessage(status: number, message?: string) {
   }
 
   return message || "Не удалось выполнить запрос.";
+}
+
+function formatFullName(user: {
+  firstName: string;
+  lastName: string;
+  middleName: string | null;
+}) {
+  return `${user.lastName} ${user.firstName}${user.middleName ? ` ${user.middleName}` : ""}`;
 }
 
 export function ProjectsPageClient({
@@ -88,6 +131,19 @@ export function ProjectsPageClient({
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [projectDepartmentId, setProjectDepartmentId] = useState("");
+
+  const [selectedProject, setSelectedProject] = useState<ProjectListItem | null>(null);
+  const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [membersManageError, setMembersManageError] = useState<string | null>(null);
+  const [membersForbidden, setMembersForbidden] = useState(false);
+  const [members, setMembers] = useState<ProjectMemberItem[]>([]);
+  const [candidates, setCandidates] = useState<ProjectMemberCandidate[]>([]);
+  const [candidateUserId, setCandidateUserId] = useState("");
+  const [canManageMembers, setCanManageMembers] = useState(false);
+  const [memberAction, setMemberAction] = useState<MemberActionState>(null);
 
   const canShowCreateButton = canReadProjects && canCreateProjects;
 
@@ -151,6 +207,78 @@ export function ProjectsPageClient({
       setIsLoadingDepartments(false);
     }
   }, [canReadProjects]);
+
+  const loadProjectMembersContext = useCallback(async (projectId: string) => {
+    setMembersError(null);
+    setMembersManageError(null);
+    setMembersForbidden(false);
+    setIsLoadingMembers(true);
+    setIsLoadingCandidates(false);
+    setCanManageMembers(false);
+    setCandidates([]);
+    setCandidateUserId("");
+
+    try {
+      const membersResponse = await fetch(`/api/projects/${projectId}/members`);
+      const membersPayload = await membersResponse.json();
+
+      if (!membersResponse.ok) {
+        if (membersResponse.status === 403) {
+          setMembersForbidden(true);
+          setMembers([]);
+          return;
+        }
+
+        throw new Error(getApiErrorMessage(membersResponse.status, membersPayload.error?.message));
+      }
+
+      setMembers(membersPayload.members || []);
+    } catch (loadError: unknown) {
+      setMembersError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Не удалось загрузить участников проекта.",
+      );
+      setMembers([]);
+      return;
+    } finally {
+      setIsLoadingMembers(false);
+    }
+
+    setIsLoadingCandidates(true);
+
+    try {
+      const candidatesResponse = await fetch(`/api/projects/${projectId}/members/candidates`);
+      const candidatesPayload = await candidatesResponse.json();
+
+      if (candidatesResponse.status === 403) {
+        setCanManageMembers(false);
+        setCandidates([]);
+        return;
+      }
+
+      if (!candidatesResponse.ok) {
+        throw new Error(
+          getApiErrorMessage(candidatesResponse.status, candidatesPayload.error?.message),
+        );
+      }
+
+      const loadedCandidates = candidatesPayload.candidates || [];
+      setCanManageMembers(true);
+      setCandidates(loadedCandidates);
+      setCandidateUserId(loadedCandidates[0]?.id ?? "");
+    } catch (loadError: unknown) {
+      setCanManageMembers(false);
+      setCandidates([]);
+      setMembersManageError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Не удалось загрузить кандидатов для добавления.",
+      );
+    } finally {
+      setIsLoadingCandidates(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!canReadProjects) {
@@ -249,6 +377,106 @@ export function ProjectsPageClient({
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function openMembersModal(project: ProjectListItem) {
+    setSelectedProject(project);
+    setIsMembersModalOpen(true);
+    await loadProjectMembersContext(project.id);
+  }
+
+  function closeMembersModal() {
+    if (memberAction !== null) {
+      return;
+    }
+
+    setIsMembersModalOpen(false);
+    setSelectedProject(null);
+    setMembers([]);
+    setCandidates([]);
+    setCandidateUserId("");
+    setMembersError(null);
+    setMembersManageError(null);
+    setMembersForbidden(false);
+    setCanManageMembers(false);
+  }
+
+  async function addMemberToProject() {
+    if (!selectedProject || !candidateUserId || memberAction !== null) {
+      return;
+    }
+
+    setMembersManageError(null);
+    setMemberAction({
+      kind: "add",
+      targetId: candidateUserId,
+    });
+
+    try {
+      const response = await fetch(`/api/projects/${selectedProject.id}/members`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId: candidateUserId }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, payload.error?.message));
+      }
+
+      await loadProjectMembersContext(selectedProject.id);
+    } catch (addError: unknown) {
+      setMembersManageError(
+        addError instanceof Error
+          ? addError.message
+          : "Не удалось добавить участника проекта.",
+      );
+    } finally {
+      setMemberAction(null);
+    }
+  }
+
+  async function removeMemberFromProject(member: ProjectMemberItem) {
+    if (!selectedProject || memberAction !== null) {
+      return;
+    }
+
+    const confirmed = confirm(
+      `Подтвердите удаление участника ${member.user.email} из проекта ${selectedProject.name}.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setMembersManageError(null);
+    setMemberAction({
+      kind: "remove",
+      targetId: member.id,
+    });
+
+    try {
+      const response = await fetch(
+        `/api/projects/${selectedProject.id}/members/${member.id}`,
+        { method: "DELETE" },
+      );
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, payload.error?.message));
+      }
+
+      await loadProjectMembersContext(selectedProject.id);
+    } catch (removeError: unknown) {
+      setMembersManageError(
+        removeError instanceof Error
+          ? removeError.message
+          : "Не удалось удалить участника проекта.",
+      );
+    } finally {
+      setMemberAction(null);
     }
   }
 
@@ -355,6 +583,9 @@ export function ProjectsPageClient({
                   <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-text-secondary">
                     Создан
                   </th>
+                  <th className="px-6 py-4 text-right text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+                    Действия
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -386,6 +617,18 @@ export function ProjectsPageClient({
                         dateStyle: "medium",
                         timeStyle: "short",
                       }).format(new Date(project.createdAt))}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        type="button"
+                        data-testid={`project-members-button-${project.id}`}
+                        onClick={() => {
+                          void openMembersModal(project);
+                        }}
+                        className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-3 text-sm font-semibold text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text-primary"
+                      >
+                        Участники
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -501,6 +744,197 @@ export function ProjectsPageClient({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isMembersModalOpen && selectedProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-4xl rounded-2xl border border-border bg-surface p-6 shadow-xl">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">
+                  Участники проекта
+                </h2>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {selectedProject.name} · {selectedProject.department.name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeMembersModal}
+                disabled={memberAction !== null}
+                className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Закрыть
+              </button>
+            </div>
+
+            {membersError && (
+              <div className="mb-4 rounded-xl border border-danger/20 bg-danger/5 px-4 py-3">
+                <p className="text-sm font-medium text-danger">{membersError}</p>
+              </div>
+            )}
+
+            {membersForbidden ? (
+              <div className="rounded-xl border border-danger/20 bg-danger/5 p-8 text-center">
+                <p className="text-sm font-semibold text-danger">
+                  Недостаточно прав для просмотра участников этого проекта.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {canManageMembers && (
+                  <div className="rounded-xl border border-border bg-surface-subtle/20 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <div className="flex-1">
+                        <label
+                          htmlFor="project-member-candidate"
+                          className="mb-2 block text-sm font-semibold text-text-secondary"
+                        >
+                          Добавить участника
+                        </label>
+                        <select
+                          id="project-member-candidate"
+                          value={candidateUserId}
+                          disabled={isLoadingCandidates || memberAction !== null || candidates.length === 0}
+                          onChange={(event) => setCandidateUserId(event.target.value)}
+                          className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm text-text-primary outline-none transition-all focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <option value="">Выберите пользователя</option>
+                          {candidates.map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>
+                              {formatFullName(candidate)} ({candidate.email})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void addMemberToProject();
+                        }}
+                        disabled={
+                          candidateUserId.length === 0
+                          || memberAction !== null
+                          || isLoadingCandidates
+                        }
+                        className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {memberAction?.kind === "add" ? "Добавление..." : "Добавить"}
+                      </button>
+                    </div>
+                    {candidates.length === 0 && !isLoadingCandidates && (
+                      <p className="mt-2 text-xs text-text-secondary">
+                        Подходящие кандидаты отсутствуют.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!canManageMembers && !isLoadingCandidates && (
+                  <div className="rounded-xl border border-border bg-surface-subtle/20 px-4 py-3">
+                    <p className="text-sm text-text-secondary">
+                      Управление составом проекта недоступно для вашей роли.
+                    </p>
+                  </div>
+                )}
+
+                {membersManageError && (
+                  <div className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-3">
+                    <p className="text-sm font-medium text-danger">{membersManageError}</p>
+                  </div>
+                )}
+
+                <div className="overflow-hidden rounded-xl border border-border bg-surface">
+                  {isLoadingMembers ? (
+                    <div className="flex items-center justify-center py-16">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <div className="text-sm font-medium text-text-secondary">
+                          Загрузка участников...
+                        </div>
+                      </div>
+                    </div>
+                  ) : members.length === 0 ? (
+                    <div className="px-6 py-12 text-center">
+                      <p className="text-sm font-medium text-text-secondary">
+                        Участники проекта пока не добавлены.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-border bg-surface-subtle/20">
+                            <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+                              Пользователь
+                            </th>
+                            <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+                              Статус аккаунта
+                            </th>
+                            <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+                              Дата добавления
+                            </th>
+                            <th className="px-6 py-4 text-right text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+                              Действия
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {members.map((member) => (
+                            <tr key={member.id} data-testid={`project-member-row-${member.id}`} className="hover:bg-surface-subtle/40">
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-sm font-semibold text-text-primary">
+                                    {member.user.email}
+                                  </span>
+                                  <span className="text-xs text-text-secondary">
+                                    {formatFullName(member.user)}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span
+                                  className={`inline-flex rounded-lg px-2 py-0.5 text-xs font-semibold ${
+                                    member.user.isActive
+                                      ? "border border-success/20 bg-success/10 text-success"
+                                      : "border border-danger/20 bg-danger/5 text-danger"
+                                  }`}
+                                >
+                                  {member.user.isActive ? "Активен" : "Неактивен"}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-sm text-text-secondary">
+                                {new Intl.DateTimeFormat("ru-RU", {
+                                  dateStyle: "medium",
+                                  timeStyle: "short",
+                                }).format(new Date(member.joinedAt))}
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <button
+                                  type="button"
+                                  data-testid={`remove-project-member-${member.id}`}
+                                  onClick={() => {
+                                    void removeMemberFromProject(member);
+                                  }}
+                                  disabled={!canManageMembers || memberAction !== null}
+                                  className="inline-flex h-9 items-center justify-center rounded-lg border border-danger/20 bg-danger/5 px-3 text-sm font-semibold text-danger transition-colors hover:border-danger/30 hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {memberAction?.kind === "remove" && memberAction.targetId === member.id
+                                    ? "Удаление..."
+                                    : "Удалить"}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
