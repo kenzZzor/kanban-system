@@ -87,6 +87,17 @@ test.describe("Users management UI", () => {
     await expect(page.getByRole("heading", { name: "Пользователи" })).toBeVisible();
   });
 
+  test("self reset action is disabled with a visible reason", async ({ page }) => {
+    await login(page);
+    await page.goto("/users");
+
+    const selfRow = page.locator("tr", { hasText: systemAdmin.email });
+    await expect(
+      selfRow.getByRole("button", { name: "Сбросить пароль" }),
+    ).toBeDisabled();
+    await expect(selfRow.getByText("Нельзя сбросить себе")).toBeVisible();
+  });
+
   test("deactivation and reactivation update status only after successful response", async ({
     page,
   }) => {
@@ -133,8 +144,11 @@ test.describe("Users management UI", () => {
     await page.goto("/users");
 
     const row = page.locator("tr", { hasText: target.email });
-    page.once("dialog", (dialog) => dialog.accept());
     await row.getByRole("button", { name: "Сбросить пароль" }).click();
+    await expect(page.getByRole("heading", { name: "Подтвердите сброс пароля" }))
+      .toBeVisible();
+    await page.fill("#reset-confirm-email", target.email);
+    await page.getByRole("button", { name: "Подтвердить сброс" }).click();
 
     await expect(page.getByText("Пароль сброшен")).toBeVisible();
     const passwordCode = page.locator("code");
@@ -146,16 +160,18 @@ test.describe("Users management UI", () => {
 
     await page.getByRole("button", { name: "Закрыть" }).click();
     await expect(page.getByText("Пароль сброшен")).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText("Пароль сброшен")).toHaveCount(0);
   });
 
-  test("cancel confirmation does not call deactivation API", async ({ page }) => {
+  test("wrong confirmation email blocks password reset request", async ({ page }) => {
     const target = await createDirectUser({
-      email: uniqueEmail("ui.cancel.target"),
+      email: uniqueEmail("ui.mismatch.target"),
     });
 
-    let statusCalls = 0;
-    await page.route(`**/api/users/${target.id}/status`, async (route) => {
-      statusCalls += 1;
+    let resetCalls = 0;
+    await page.route(`**/api/users/${target.id}/reset-password`, async (route) => {
+      resetCalls += 1;
       await route.continue();
     });
 
@@ -163,13 +179,37 @@ test.describe("Users management UI", () => {
     await page.goto("/users");
 
     const row = page.locator("tr", { hasText: target.email });
-    await expect(row).toContainText("Активен");
+    await row.getByRole("button", { name: "Сбросить пароль" }).click();
+    await page.fill("#reset-confirm-email", "wrong@kanban.local");
+    await expect(
+      page.getByRole("button", { name: "Подтвердить сброс" }),
+    ).toBeDisabled();
+    await expect(page.getByText("Email не совпадает.")).toBeVisible();
+    await expect.poll(() => resetCalls).toBe(0);
+  });
 
-    page.once("dialog", (dialog) => dialog.dismiss());
-    await row.getByRole("button", { name: "Деактивировать" }).click();
+  test("cancel confirmation does not call reset password API", async ({ page }) => {
+    const target = await createDirectUser({
+      email: uniqueEmail("ui.cancel.target"),
+    });
 
-    await expect.poll(() => statusCalls).toBe(0);
-    await expect(row).toContainText("Активен");
+    let resetCalls = 0;
+    await page.route(`**/api/users/${target.id}/reset-password`, async (route) => {
+      resetCalls += 1;
+      await route.continue();
+    });
+
+    await login(page);
+    await page.goto("/users");
+
+    const row = page.locator("tr", { hasText: target.email });
+    await row.getByRole("button", { name: "Сбросить пароль" }).click();
+    await expect(page.getByRole("heading", { name: "Подтвердите сброс пароля" }))
+      .toBeVisible();
+    await page.getByRole("button", { name: "Отмена" }).click();
+    await expect(page.getByRole("heading", { name: "Подтвердите сброс пароля" }))
+      .toHaveCount(0);
+    await expect.poll(() => resetCalls).toBe(0);
   });
 
   test("shows API errors for status and reset operations", async ({ page }) => {
@@ -214,8 +254,9 @@ test.describe("Users management UI", () => {
       page.getByText("Cannot deactivate the last active system administrator."),
     ).toBeVisible();
 
-    page.once("dialog", (dialog) => dialog.accept());
     await row.getByRole("button", { name: "Сбросить пароль" }).click();
+    await page.fill("#reset-confirm-email", target.email);
+    await page.getByRole("button", { name: "Подтвердить сброс" }).click();
     await expect(
       page.getByText("User account data changed concurrently. Refresh and try again."),
     ).toBeVisible();

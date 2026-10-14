@@ -55,6 +55,14 @@ export class ConflictError extends AppError {
   }
 }
 
+export class SelfPasswordResetNotAllowedError extends AppError {
+  constructor(
+    message = "Administrators cannot reset their own password from user management.",
+  ) {
+    super(409, "SELF_PASSWORD_RESET_NOT_ALLOWED", message);
+  }
+}
+
 export class ValidationError extends AppError {
   constructor(message = "Invalid request data.", details?: unknown) {
     super(400, "VALIDATION_ERROR", message, details);

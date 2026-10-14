@@ -26,6 +26,10 @@ interface ResetPasswordResult {
   temporaryPasswordExpiresAt: string;
 }
 
+interface UsersPageClientProps {
+  currentUserId: string;
+}
+
 type ActiveAction =
   | {
       userId: string;
@@ -77,7 +81,7 @@ function getTemporaryPasswordState(user: UserListItem) {
   }).format(expiresAt)}`;
 }
 
-export function UsersPageClient() {
+export function UsersPageClient({ currentUserId }: UsersPageClientProps) {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +89,8 @@ export function UsersPageClient() {
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [resetResult, setResetResult] = useState<ResetPasswordResult | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [resetDialogUser, setResetDialogUser] = useState<UserListItem | null>(null);
+  const [resetConfirmEmail, setResetConfirmEmail] = useState("");
 
   const fetchUsers = useCallback(async () => {
     setError(null);
@@ -161,10 +167,6 @@ export function UsersPageClient() {
   }
 
   async function runResetPassword(user: UserListItem) {
-    if (!confirm(`Сбросить пароль для аккаунта ${user.email}?`)) {
-      return;
-    }
-
     setError(null);
     setCopyMessage(null);
     setActiveAction({
@@ -198,6 +200,31 @@ export function UsersPageClient() {
     } finally {
       setActiveAction(null);
     }
+  }
+
+  function openResetDialog(user: UserListItem) {
+    setResetDialogUser(user);
+    setResetConfirmEmail("");
+    setError(null);
+  }
+
+  function closeResetDialog() {
+    if (activeAction?.kind === "reset") {
+      return;
+    }
+
+    setResetDialogUser(null);
+    setResetConfirmEmail("");
+  }
+
+  async function confirmResetFromDialog() {
+    if (!resetDialogUser) {
+      return;
+    }
+
+    await runResetPassword(resetDialogUser);
+    setResetDialogUser(null);
+    setResetConfirmEmail("");
   }
 
   async function copyTemporaryPassword() {
@@ -243,6 +270,10 @@ export function UsersPageClient() {
       </div>
     );
   }
+
+  const isResetDialogOpen = resetDialogUser !== null;
+  const isResetDialogSubmitting = activeAction?.kind === "reset" && activeAction.userId === resetDialogUser?.id;
+  const isResetDialogEmailMatch = resetDialogUser !== null && resetConfirmEmail === resetDialogUser.email;
 
   return (
     <div className="max-w-7xl space-y-6">
@@ -348,6 +379,7 @@ export function UsersPageClient() {
               <tbody className="divide-y divide-border">
                 {users.map((user) => {
                   const rowBusy = activeAction?.userId === user.id;
+                  const isSelfRow = user.id === currentUserId;
                   const statusBusy = rowBusy
                     && (activeAction.kind === "deactivate" || activeAction.kind === "reactivate");
                   const resetBusy = rowBusy && activeAction.kind === "reset";
@@ -408,12 +440,17 @@ export function UsersPageClient() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => runResetPassword(user)}
-                            disabled={rowBusy}
+                            onClick={() => openResetDialog(user)}
+                            disabled={rowBusy || isSelfRow}
                             className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-3 text-sm font-semibold text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {resetBusy ? "..." : "Сбросить пароль"}
                           </button>
+                          {isSelfRow && (
+                            <span className="self-center text-xs text-text-disabled">
+                              Нельзя сбросить себе
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -424,6 +461,67 @@ export function UsersPageClient() {
           </div>
         )}
       </div>
+
+      {isResetDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-xl rounded-2xl border border-border bg-surface p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-text-primary">
+              Подтвердите сброс пароля
+            </h2>
+            <p className="mt-2 text-sm text-text-secondary">
+              Аккаунт: <span className="font-semibold text-text-primary">{resetDialogUser.email}</span>
+            </p>
+            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-text-secondary">
+              <li>Текущий пароль пользователя станет недействительным.</li>
+              <li>Все активные сессии пользователя будут завершены.</li>
+              <li>Временный пароль действует 24 часа.</li>
+              <li>Временный пароль показывается только один раз.</li>
+              <li>При следующем входе пользователь обязан сменить пароль.</li>
+            </ul>
+            <div className="mt-5 space-y-2">
+              <label
+                htmlFor="reset-confirm-email"
+                className="block text-sm font-semibold text-text-secondary"
+              >
+                Для подтверждения введите email точно
+              </label>
+              <input
+                id="reset-confirm-email"
+                value={resetConfirmEmail}
+                onChange={(event) => setResetConfirmEmail(event.target.value.trim())}
+                placeholder={resetDialogUser.email}
+                disabled={isResetDialogSubmitting}
+                className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-sm text-text-primary outline-none transition-all focus:ring-2 focus:ring-primary disabled:opacity-60"
+              />
+              {resetConfirmEmail.length > 0 && !isResetDialogEmailMatch && (
+                <p className="text-xs font-medium text-danger">
+                  Email не совпадает.
+                </p>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeResetDialog}
+                disabled={isResetDialogSubmitting}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void confirmResetFromDialog();
+                }}
+                disabled={!isResetDialogEmailMatch || isResetDialogSubmitting}
+                className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-2 text-sm font-semibold text-danger transition-colors hover:border-danger/30 hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isResetDialogSubmitting ? "Сброс..." : "Подтвердить сброс"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

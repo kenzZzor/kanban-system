@@ -6,6 +6,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  SelfPasswordResetNotAllowedError,
 } from "@/lib/api/errors";
 import { hashPassword } from "@/lib/auth/password";
 import { deleteSessionsForUser } from "@/lib/auth/session";
@@ -276,6 +277,12 @@ export async function resetUserPassword({
   userId,
 }: ManagedUserLifecycleParams): Promise<ResetPasswordResult> {
   await assertActiveSystemAdmin(tx, actorId);
+
+  if (actorId === userId) {
+    throw new SelfPasswordResetNotAllowedError(
+      "You cannot reset your own password from the administrative panel.",
+    );
+  }
 
   const targetUser = await tx.user.findUnique({
     where: { id: userId },

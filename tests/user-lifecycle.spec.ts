@@ -768,6 +768,75 @@ test.describe("User lifecycle API", () => {
     expect(activity).not.toBeNull();
   });
 
+  test("rejects administrative self password reset without side effects", async ({
+    request,
+  }) => {
+    await login(request);
+
+    const meResponse = await request.get("/api/auth/me");
+    expect(meResponse.status()).toBe(200);
+    const me = (await meResponse.json()) as { user: { id: string } };
+
+    const before = await prisma.user.findUniqueOrThrow({
+      where: { id: me.user.id },
+      select: {
+        passwordHash: true,
+        passwordMustChange: true,
+        temporaryPasswordExpiresAt: true,
+        passwordChangedAt: true,
+      },
+    });
+    const beforeSessionCount = await prisma.session.count({
+      where: { userId: me.user.id },
+    });
+    const beforeActivityCount = await prisma.activityLog.count({
+      where: {
+        type: "USER_PASSWORD_RESET",
+        entityType: "User",
+        entityId: me.user.id,
+      },
+    });
+
+    const resetResponse = await request.post(
+      `/api/users/${me.user.id}/reset-password`,
+    );
+    expect(resetResponse.status()).toBe(409);
+    const resetBody = (await resetResponse.json()) as {
+      error: { code: string };
+      temporaryPassword?: string;
+    };
+    expect(resetBody).toMatchObject({
+      error: {
+        code: "SELF_PASSWORD_RESET_NOT_ALLOWED",
+      },
+    });
+    expect(resetBody).not.toHaveProperty("temporaryPassword");
+
+    const after = await prisma.user.findUniqueOrThrow({
+      where: { id: me.user.id },
+      select: {
+        passwordHash: true,
+        passwordMustChange: true,
+        temporaryPasswordExpiresAt: true,
+        passwordChangedAt: true,
+      },
+    });
+    const afterSessionCount = await prisma.session.count({
+      where: { userId: me.user.id },
+    });
+    const afterActivityCount = await prisma.activityLog.count({
+      where: {
+        type: "USER_PASSWORD_RESET",
+        entityType: "User",
+        entityId: me.user.id,
+      },
+    });
+
+    expect(after).toEqual(before);
+    expect(afterSessionCount).toBe(beforeSessionCount);
+    expect(afterActivityCount).toBe(beforeActivityCount);
+  });
+
   test("reset password revokes sessions, returns a one-time temporary password, and requires change", async ({
     request,
   }) => {

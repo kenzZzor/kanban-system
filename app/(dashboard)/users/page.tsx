@@ -26,5 +26,5 @@ export default async function UsersPage() {
     redirect("/");
   }
 
-  return <UsersPageClient />;
+  return <UsersPageClient currentUserId={user.id} />;
 }
