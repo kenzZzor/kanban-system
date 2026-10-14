@@ -76,7 +76,7 @@ function UsersIcon({ className = "" }: IconProps) {
 const navItems = [
   { name: "Департаменты", href: "/departments", disabled: false, icon: DepartmentsIcon },
   { name: "Проекты", href: "/projects", disabled: false, icon: ProjectsIcon },
-  { name: "Задачи", href: "#", disabled: true, icon: TasksIcon },
+  { name: "Задачи", href: "/tasks", disabled: false, icon: TasksIcon },
 ];
 
 function NavigationLinks({
